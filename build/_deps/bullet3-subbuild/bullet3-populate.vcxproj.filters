@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-mkdir.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-download.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-update.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-patch.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-configure.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-build.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-install.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\a3fde22a0e38706cfae488ee57460a64\bullet3-populate-test.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\df4c02a22296bc56db1831837c5ff03b\bullet3-populate-complete.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\2a71a53670d1789549f87ae5d185fcad\bullet3-populate.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\bullet3-populate" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{7685781B-12A7-30A5-82D2-B910215FD01D}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

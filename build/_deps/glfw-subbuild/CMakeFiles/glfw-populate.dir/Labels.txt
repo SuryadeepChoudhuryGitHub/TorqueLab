@@ -1,0 +1,14 @@
+# Target labels
+ glfw-populate
+# Source files and their labels
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/glfw-populate
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/14cdbf7b68f71e4f1a5ced2c135ac85f/glfw-populate.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/4abe7f71746309775f5d234aeee60394/glfw-populate-complete.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-build.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-configure.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-download.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-install.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-mkdir.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-patch.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-test.rule
+D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-update.rule

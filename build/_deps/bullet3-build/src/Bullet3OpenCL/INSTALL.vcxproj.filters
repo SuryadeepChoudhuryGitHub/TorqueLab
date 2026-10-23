@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\CMakeFiles\13042863b659a28536afbd0a2953d8c7\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{D5238671-75AF-3D5F-81FF-7D44570E62AA}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

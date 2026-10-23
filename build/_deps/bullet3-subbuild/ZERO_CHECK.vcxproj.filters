@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-subbuild\CMakeFiles\2a71a53670d1789549f87ae5d185fcad\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{7685781B-12A7-30A5-82D2-B910215FD01D}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

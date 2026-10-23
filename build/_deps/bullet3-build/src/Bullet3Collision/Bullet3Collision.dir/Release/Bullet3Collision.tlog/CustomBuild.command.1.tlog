@@ -1,0 +1,10 @@
+^D:\# MY FOLDER\MY WORK\VISUAL STUDIO SCRIPT\WEBAPPLICATIONS\TORQUELAB\BUILD\_DEPS\BULLET3-SRC\SRC\BULLET3COLLISION\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SD:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab" "-BD:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build" --check-stamp-file "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3Collision/CMakeFiles/generate.stamp"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

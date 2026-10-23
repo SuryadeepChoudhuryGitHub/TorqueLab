@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/glfw-populate"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/14cdbf7b68f71e4f1a5ced2c135ac85f/glfw-populate.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/4abe7f71746309775f5d234aeee60394/glfw-populate-complete.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-build.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-configure.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-download.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-install.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-mkdir.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-patch.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-test.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-subbuild/CMakeFiles/50e20e5b107ca0b8e3da6bab53236128/glfw-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"glfw-populate"
+		],
+		"name" : "glfw-populate"
+	}
+}

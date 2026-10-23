@@ -1,0 +1,22 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-build/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/glfw-build/src/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3OpenCL/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3Serialize/Bullet2FileLoader/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3Dynamics/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3Collision/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3Geometry/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/BulletInverseDynamics/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/BulletSoftBody/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/BulletCollision/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/BulletDynamics/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/LinearMath/cmake_install.cmake",
+		"D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/bullet3-build/src/Bullet3Common/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

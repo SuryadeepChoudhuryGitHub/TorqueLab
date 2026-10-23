@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/imgui-populate"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/b10286075aa9a1082caabdc086378590/imgui-populate.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/6a957c9e75487aa45fb6da28e4392e22/imgui-populate-complete.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-build.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-configure.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-download.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-install.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-mkdir.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-patch.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-test.rule"
+		},
+		{
+			"file" : "D:/# My Folder/My Work/Visual Studio script/WebApplications/TorqueLab/build/_deps/imgui-subbuild/CMakeFiles/ba67f53677ed7b8bb6f227795c4007bc/imgui-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"imgui-populate"
+		],
+		"name" : "imgui-populate"
+	}
+}

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Project Path="_deps/bullet3-build/src/Bullet3Serialize/Bullet2FileLoader/Bullet2FileLoader.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="ae3de9bf-911b-35c5-9d20-6af252934c38">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/Bullet3Collision/Bullet3Collision.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="5bd3478c-00e5-34a2-be17-2c4c97131ebb">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/Bullet3Common/Bullet3Common.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="6f2a634b-6a7d-39c3-9208-f50d4194e4d3">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/Bullet3Dynamics/Bullet3Dynamics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="97b4f581-e415-37f7-b30a-231c186526c4">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/Bullet3Geometry/Bullet3Geometry.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="97d60f6d-180c-38ba-a88b-cd43e4135ece">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/Bullet3OpenCL/Bullet3OpenCL_clew.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="366bcf72-9403-3eae-89a4-7e9469440c56">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="48842c43-e851-3613-92f6-7838c00d1f23">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/BulletDynamics/BulletDynamics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="5fe4814c-1f6e-39fd-9d07-443d0478cd42">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/BulletInverseDynamics/BulletInverseDynamics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f5d976a9-48fe-372e-9ec1-f72f08e26959">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/BulletSoftBody/BulletSoftBody.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="c3a8f0a0-2b44-350c-9548-28945cb91bf1">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="279484ae-a35c-3976-b482-6c7592d9204c">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="TorqueLabNative.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="6aaa1f64-95c6-32b2-af7b-0a0b7b34729d">
+		<BuildDependency Project="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj"/>
+		<BuildDependency Project="_deps/bullet3-build/src/BulletDynamics/BulletDynamics.vcxproj"/>
+		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
+		<BuildDependency Project="TorqueLabPhysics.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="glad.vcxproj"/>
+		<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
+		<BuildDependency Project="imgui_lib.vcxproj"/>
+	</Project>
+	<Project Path="TorqueLabNativeTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4826eee4-75a1-3c17-b036-423b77272d2f">
+		<BuildDependency Project="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj"/>
+		<BuildDependency Project="_deps/bullet3-build/src/BulletDynamics/BulletDynamics.vcxproj"/>
+		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
+		<BuildDependency Project="TorqueLabPhysics.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="TorqueLabPhysics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="519818b1-a536-3757-8e12-8e8f91bab3da">
+		<BuildDependency Project="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj"/>
+		<BuildDependency Project="_deps/bullet3-build/src/BulletDynamics/BulletDynamics.vcxproj"/>
+		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="glad.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="525c5bb9-bf3a-3f8d-8eba-a03f81522b9f">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="imgui_lib.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="bb26c950-70b2-3949-b4c0-fe12f82cd387">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
+	</Project>
+	<Folder Name="/CMakePredefinedTargets/">
+		<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8b309476-c525-3bb5-8679-67ae77a8dedc" DefaultStartup="true">
+			<BuildDependency Project="_deps/bullet3-build/src/Bullet3Serialize/Bullet2FileLoader/Bullet2FileLoader.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/Bullet3Collision/Bullet3Collision.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/Bullet3Common/Bullet3Common.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/Bullet3Dynamics/Bullet3Dynamics.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/Bullet3Geometry/Bullet3Geometry.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/Bullet3OpenCL/Bullet3OpenCL_clew.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/BulletDynamics/BulletDynamics.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/BulletInverseDynamics/BulletInverseDynamics.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/BulletSoftBody/BulletSoftBody.vcxproj"/>
+			<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
+			<BuildDependency Project="TorqueLabNative.vcxproj"/>
+			<BuildDependency Project="TorqueLabNativeTests.vcxproj"/>
+			<BuildDependency Project="TorqueLabPhysics.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<BuildDependency Project="glad.vcxproj"/>
+			<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
+			<BuildDependency Project="imgui_lib.vcxproj"/>
+		</Project>
+		<Project Path="INSTALL.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="1b313973-50fb-31e6-b11b-2c0e9bc240b0">
+			<BuildDependency Project="ALL_BUILD.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="RUN_TESTS.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="2bd4f811-c23c-38e3-baaa-cdb935eb2658">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3e86fa2e-a677-3108-b40a-49baf241615b"/>
+	</Folder>
+	<Folder Name="/GLFW3/">
+		<Project Path="_deps/glfw-build/src/glfw.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3b8495ea-452c-3cdd-ab31-264b092d58db">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+		<Project Path="_deps/glfw-build/src/update_mappings.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="7be9c136-53bf-3b27-8d92-435b96d04533">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+	</Folder>
+</Solution>
