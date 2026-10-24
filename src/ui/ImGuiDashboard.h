@@ -26,6 +26,8 @@ struct DashboardCallbacks {
     std::function<void(const SpawnPreset&)> onSelectPreset;
     std::function<void(GraphicsQuality)> onChangeQuality;
     std::function<void()> onRunValidationCheck;
+    std::function<void(bool)> onToggleImportedModel;
+    std::function<void()> onToggleVisualDebug;
 };
 
 class ImGuiDashboard {
@@ -45,7 +47,11 @@ public:
         double fps,
         double physicsStepTimeMs,
         int windowWidth,
-        int windowHeight
+        int windowHeight,
+        bool useImportedModel = true,
+        bool hasImportedModel = true,
+        const std::string& modelName = "BMW M4 Coupe",
+        bool visualDebugEnabled = false
     );
 
     void showValidationReport(const std::string& message, bool isSuccess = true);
@@ -67,9 +73,19 @@ private:
         const std::string& cameraLabel,
         bool gizmosEnabled,
         GraphicsQuality currentQuality,
-        int windowWidth
+        int windowWidth,
+        bool useImportedModel,
+        bool hasImportedModel,
+        bool visualDebugEnabled
     );
-    void renderLeftPanels(VehicleDynamics& vehicle, int windowHeight);
+    void renderLeftPanels(
+        VehicleDynamics& vehicle,
+        int windowHeight,
+        bool useImportedModel,
+        bool hasImportedModel,
+        const std::string& modelName,
+        bool visualDebugEnabled
+    );
     void renderRightTelemetryPanel(
         const VehicleTelemetrySnapshot& snap,
         double fps,

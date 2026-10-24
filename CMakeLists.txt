@@ -15,7 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-    add_compile_options(/W3 /MP /utf-8 /EHsc)
+    add_compile_options(/W3 /FS /utf-8 /EHsc)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
@@ -136,6 +136,7 @@ add_executable(TorqueLabNative
     src/renderer/Mesh.cpp
     src/renderer/Texture2D.cpp
     src/renderer/ShadowMapFBO.cpp
+    src/renderer/ModelLoaderGLB.cpp
     src/renderer/VehicleRendererGL.cpp
     src/renderer/TrackRendererGL.cpp
     src/renderer/DebugOverlayGL.cpp
@@ -146,6 +147,7 @@ add_executable(TorqueLabNative
 
 target_include_directories(TorqueLabNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(TorqueLabNative PRIVATE
@@ -156,12 +158,19 @@ target_link_libraries(TorqueLabNative PRIVATE
     OpenGL::GL
 )
 
-# Copy GLSL shaders next to executable after build for portable execution
+# Copy GLSL shaders and vehicle 3D models next to executable after build for portable execution
 add_custom_command(TARGET TorqueLabNative POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
         "$<TARGET_FILE_DIR:TorqueLabNative>/shaders"
     COMMENT "Copying GLSL shaders to output directory"
+)
+
+add_custom_command(TARGET TorqueLabNative POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/model"
+        "$<TARGET_FILE_DIR:TorqueLabNative>/model"
+    COMMENT "Copying vehicle 3D models to output directory"
 )
 
 # -----------------------------------------------------------------------------

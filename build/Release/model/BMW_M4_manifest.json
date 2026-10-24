@@ -1,0 +1,48 @@
+{
+  "model_name": "BMW M4 Coupe",
+  "source": "Blender glTF 2.0 Export",
+  "scale": 1.0,
+  "axis_convention": {
+    "forward": "+Z",
+    "up": "+Y",
+    "left": "+X"
+  },
+  "chassis_center_offset": [0.0, -0.06, -0.1475],
+  "ignore_nodes": [
+    "Ground",
+    "Plane",
+    "Camera",
+    "Light"
+  ],
+  "roles": {
+    "Rim": "Wheel_FL",
+    "Tyre": "Wheel_FL",
+    "Rim_cap": "Wheel_FL",
+    "Rim.003": "Wheel_FR",
+    "Tyre.003": "Wheel_FR",
+    "Rim.001": "Wheel_RL",
+    "Tyre.001": "Wheel_RL",
+    "Rim.002": "Wheel_RR",
+    "Tyre.002": "Wheel_RR"
+  },
+  "material_overrides": {
+    "car_paint.001": { "roughness": 0.22, "metalness": 0.75, "base_color_hex": "0x1e66f5" },
+    "car_paint.002": { "roughness": 0.22, "metalness": 0.75, "base_color_hex": "0x1e66f5" },
+    "car_paint.003": { "roughness": 0.22, "metalness": 0.75, "base_color_hex": "0x1e66f5" },
+    "car_paint.004": { "roughness": 0.22, "metalness": 0.75, "base_color_hex": "0x1e66f5" },
+    "car_paint.005": { "roughness": 0.22, "metalness": 0.75, "base_color_hex": "0x1e66f5" },
+    "car_paint.006": { "roughness": 0.22, "metalness": 0.75, "base_color_hex": "0x1e66f5" },
+    "glass": { "roughness": 0.05, "metalness": 0.15, "opacity": 0.32, "transparent": true },
+    "tire_rubber": { "roughness": 0.85, "metalness": 0.04, "base_color_hex": "0x1a1d24" },
+    "rim": { "roughness": 0.20, "metalness": 0.85, "base_color_hex": "0xd8dee9" },
+    "rim.001": { "roughness": 0.20, "metalness": 0.85, "base_color_hex": "0xd8dee9" },
+    "rearlight_red": { "is_brake_light": true, "base_color_hex": "0x660808", "emissive_color_hex": "0xff1e1e" },
+    "tailights": { "is_brake_light": true, "base_color_hex": "0x660808", "emissive_color_hex": "0xff1e1e" },
+    "Interior": { "roughness": 0.75, "metalness": 0.08, "base_color_hex": "0x202428" },
+    "Piano_Black": { "roughness": 0.15, "metalness": 0.20, "base_color_hex": "0x101318" },
+    "Solid_black": { "roughness": 0.25, "metalness": 0.15, "base_color_hex": "0x14171d" },
+    "Black_mat": { "roughness": 0.70, "metalness": 0.05, "base_color_hex": "0x1f2329" },
+    "chrome": { "roughness": 0.05, "metalness": 0.98, "base_color_hex": "0xf8fafc" },
+    "chrome_headlight": { "roughness": 0.05, "metalness": 0.95, "base_color_hex": "0xffffff" }
+  }
+}

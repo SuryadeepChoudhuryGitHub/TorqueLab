@@ -37,6 +37,8 @@ struct InputCallbacks {
     std::function<void()> onShiftUp;
     std::function<void()> onShiftDown;
     std::function<void(int)> onSelectPreset;
+    std::function<void()> onToggleModel;
+    std::function<void()> onToggleVisualDebug;
 };
 
 class InputControllerGLFW {

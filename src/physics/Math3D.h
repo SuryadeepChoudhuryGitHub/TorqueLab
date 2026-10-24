@@ -293,6 +293,14 @@ struct Mat4 {
         return Mat4{};
     }
 
+    static Mat4 fromTranslation(const Vec3& t) {
+        Mat4 out = identity();
+        out.m[12] = static_cast<float>(t.x);
+        out.m[13] = static_cast<float>(t.y);
+        out.m[14] = static_cast<float>(t.z);
+        return out;
+    }
+
     static Mat4 multiply(const Mat4& a, const Mat4& b) {
         Mat4 out;
         for (int c = 0; c < 4; ++c) {
@@ -392,5 +400,17 @@ struct Mat4 {
         return out;
     }
 };
+
+inline Vec3 mat4TransformPoint(const Mat4& mat, const Vec3& p) {
+    const float px = static_cast<float>(p.x);
+    const float py = static_cast<float>(p.y);
+    const float pz = static_cast<float>(p.z);
+    const float x = mat.m[0] * px + mat.m[4] * py + mat.m[8] * pz + mat.m[12];
+    const float y = mat.m[1] * px + mat.m[5] * py + mat.m[9] * pz + mat.m[13];
+    const float z = mat.m[2] * px + mat.m[6] * py + mat.m[10] * pz + mat.m[14];
+    const float w = mat.m[3] * px + mat.m[7] * py + mat.m[11] * pz + mat.m[15];
+    const float invW = (std::abs(w) > 1e-6f) ? (1.0f / w) : 1.0f;
+    return Vec3{x * invW, y * invW, z * invW};
+}
 
 } // namespace torquelab

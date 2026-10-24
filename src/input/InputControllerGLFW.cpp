@@ -31,6 +31,12 @@ void InputControllerGLFW::onKeyEvent(int key, int action) {
                 case GLFW_KEY_G:
                     if (m_callbacks.onToggleGizmos3D) m_callbacks.onToggleGizmos3D();
                     break;
+                case GLFW_KEY_B:
+                    if (m_callbacks.onToggleModel) m_callbacks.onToggleModel();
+                    break;
+                case GLFW_KEY_V:
+                    if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
+                    break;
                 case GLFW_KEY_M:
                     if (m_callbacks.onToggleTransmissionMode) m_callbacks.onToggleTransmissionMode();
                     break;

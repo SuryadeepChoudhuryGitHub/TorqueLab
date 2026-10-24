@@ -79,7 +79,11 @@ void ImGuiDashboard::render(
     double fps,
     double physicsStepTimeMs,
     int windowWidth,
-    int windowHeight
+    int windowHeight,
+    bool useImportedModel,
+    bool hasImportedModel,
+    const std::string& modelName,
+    bool visualDebugEnabled
 ) {
     if (!paused) {
         m_history.push_back(TelemetrySample{
@@ -104,8 +108,8 @@ void ImGuiDashboard::render(
         m_validationToastTimer = std::max(0.0, m_validationToastTimer - (1.0 / std::max(10.0, fps)));
     }
 
-    renderTopBar(paused, cameraLabel, gizmosEnabled, currentQuality, windowWidth);
-    renderLeftPanels(vehicle, windowHeight);
+    renderTopBar(paused, cameraLabel, gizmosEnabled, currentQuality, windowWidth, useImportedModel, hasImportedModel, visualDebugEnabled);
+    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled);
     if (telemetryEnabled) {
         renderRightTelemetryPanel(snap, fps, physicsStepTimeMs, windowWidth, windowHeight);
     }
@@ -136,7 +140,10 @@ void ImGuiDashboard::renderTopBar(
     const std::string& cameraLabel,
     bool gizmosEnabled,
     GraphicsQuality currentQuality,
-    int windowWidth
+    int windowWidth,
+    bool useImportedModel,
+    bool hasImportedModel,
+    bool visualDebugEnabled
 ) {
     ImGui::SetNextWindowPos(ImVec2(8.0f, 8.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(static_cast<float>(windowWidth - 16), 46.0f), ImGuiCond_Always);
@@ -194,6 +201,24 @@ void ImGuiDashboard::renderTopBar(
         if (gizmosEnabled) ImGui::PopStyleColor();
         ImGui::SameLine();
 
+        // Vehicle 3D Model Switcher Button (B)
+        if (hasImportedModel) {
+            if (useImportedModel) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x4f46e5, 0.95f));
+            const char* modelBtn = useImportedModel ? "Model: BMW M4 (B)" : "Model: Procedural (B)";
+            if (ImGui::SmallButton(modelBtn)) {
+                if (m_callbacks.onToggleImportedModel) m_callbacks.onToggleImportedModel(!useImportedModel);
+            }
+            if (useImportedModel) ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            if (visualDebugEnabled) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x0891b2, 0.95f));
+            if (ImGui::SmallButton("Align Debug (V)")) {
+                if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
+            }
+            if (visualDebugEnabled) ImGui::PopStyleColor();
+            ImGui::SameLine();
+        }
+
         if (telemetryEnabled) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x0284c7, 0.95f));
         if (ImGui::SmallButton("Telemetry (T)")) {
             if (m_callbacks.onToggleTelemetry) m_callbacks.onToggleTelemetry();
@@ -220,19 +245,53 @@ void ImGuiDashboard::renderTopBar(
     ImGui::End();
 }
 
-void ImGuiDashboard::renderLeftPanels(VehicleDynamics& vehicle, int windowHeight) {
+void ImGuiDashboard::renderLeftPanels(
+    VehicleDynamics& vehicle,
+    int windowHeight,
+    bool useImportedModel,
+    bool hasImportedModel,
+    const std::string& modelName,
+    bool visualDebugEnabled
+) {
     const float maxPanelHeight = std::max(320.0f, static_cast<float>(windowHeight) - 210.0f);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 60.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(315.0f, maxPanelHeight), ImGuiCond_Always);
 
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("LIVE VEHICLE TUNING & CONTROLS", nullptr, flags)) {
+        if (ImGui::CollapsingHeader("3D VEHICLE MODEL (BLENDER glTF)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (hasImportedModel) {
+                bool importedSelected = useImportedModel;
+                if (ImGui::RadioButton("BMW M4 Coupe (Blender glTF 2.0)", importedSelected)) {
+                    if (!importedSelected && m_callbacks.onToggleImportedModel) {
+                        m_callbacks.onToggleImportedModel(true);
+                    }
+                }
+                if (ImGui::RadioButton("Procedural Sports Coupe", !importedSelected)) {
+                    if (importedSelected && m_callbacks.onToggleImportedModel) {
+                        m_callbacks.onToggleImportedModel(false);
+                    }
+                }
+
+                bool debugChecked = visualDebugEnabled;
+                if (ImGui::Checkbox("Model Alignment Debug Overlay (V)", &debugChecked)) {
+                    if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
+                }
+
+                ImGui::TextDisabled("Model: %s", modelName.c_str());
+                ImGui::TextDisabled("Physics: 100% Emergent 120Hz CoM / 4 Wheels");
+            } else {
+                ImGui::TextColored(hexToImVec4(0xf59e0b), "Blender Model Not Found (Procedural Active)");
+            }
+        }
+
         if (ImGui::CollapsingHeader("DRIVING CONTROLS", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::TextDisabled("W/Up:");    ImGui::SameLine(90); ImGui::TextUnformatted("Throttle");
             ImGui::TextDisabled("S/Down:");  ImGui::SameLine(90); ImGui::TextUnformatted("Brake / Reverse");
             ImGui::TextDisabled("A / D:");   ImGui::SameLine(90); ImGui::TextUnformatted("Steer Left / Right");
             ImGui::TextDisabled("Space:");   ImGui::SameLine(90); ImGui::TextUnformatted("Handbrake (Rear)");
             ImGui::TextDisabled("M + E/Q:"); ImGui::SameLine(90); ImGui::TextUnformatted("Auto/Manual Shift");
+            ImGui::TextDisabled("B / V:");   ImGui::SameLine(90); ImGui::TextUnformatted("Toggle Model / Alignment");
             ImGui::TextDisabled("R / C:");   ImGui::SameLine(90); ImGui::TextUnformatted("Reset / Cycle Cam");
             ImGui::TextDisabled("T / G:");   ImGui::SameLine(90); ImGui::TextUnformatted("Telemetry / 3D Vectors");
             ImGui::TextDisabled("1 - 7:");   ImGui::SameLine(90); ImGui::TextUnformatted("Teleport Test Zones");

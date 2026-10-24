@@ -124,6 +124,12 @@ bool Application::init(int width, int height, bool visible) {
         },
         [this]() {
             runValidationSuite();
+        },
+        [this](bool enable) {
+            m_vehicleRenderer.setUseImportedModel(enable);
+        },
+        [this]() {
+            m_vehicleRenderer.toggleVisualDebug();
         }
     });
     m_dashboard->applyTheme();
@@ -167,6 +173,12 @@ bool Application::init(int width, int height, bool visible) {
                 for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
                 m_cameraController->snapToVehicle(*m_physicsWorld->vehicle);
             }
+        },
+        [this]() {
+            m_vehicleRenderer.setUseImportedModel(!m_vehicleRenderer.isUsingImportedModel());
+        },
+        [this]() {
+            m_vehicleRenderer.toggleVisualDebug();
         }
     });
 
@@ -292,7 +304,11 @@ int Application::run(int maxFrames) {
             smoothedFps,
             m_physicsWorld->lastPhysicsStepTimeMs,
             m_fbWidth,
-            m_fbHeight
+            m_fbHeight,
+            m_vehicleRenderer.isUsingImportedModel(),
+            m_vehicleRenderer.hasImportedModel(),
+            m_vehicleRenderer.getActiveModelName(),
+            m_vehicleRenderer.isVisualDebugEnabled()
         );
 
         ImGui::Render();
@@ -378,6 +394,7 @@ void Application::renderFrame(double /*alpha*/) {
     m_trackRenderer.renderMainPass(m_mainShader);
     m_vehicleRenderer.renderMainPass(m_mainShader);
     m_debugOverlay.render(*m_physicsWorld->vehicle, m_lineShader, m_mainShader, viewProj);
+    m_vehicleRenderer.renderVisualDebug(m_lineShader, m_mainShader, viewProj);
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);

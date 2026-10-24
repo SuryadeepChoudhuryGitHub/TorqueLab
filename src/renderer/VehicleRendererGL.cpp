@@ -1,6 +1,7 @@
 #include "renderer/VehicleRendererGL.h"
 #include <glad/glad.h>
 #include <cmath>
+#include <iostream>
 
 namespace torquelab {
 
@@ -12,6 +13,34 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     m_wheelRadius = static_cast<float>(config.wheelRadius);
     m_wheelWidth = static_cast<float>(config.wheelWidth);
 
+    // -------------------------------------------------------------------------
+    // 1. Attempt to load the Blender GLB vehicle model (.glb + manifest)
+    // -------------------------------------------------------------------------
+    const std::string glbPath = ModelLoaderGLB::resolveModelPath("model/BMW_M4.glb");
+    const std::string manifestPath = ModelLoaderGLB::resolveModelPath("model/BMW_M4_manifest.json");
+
+    std::cout << "[VehicleRendererGL] Searching for Blender 3D vehicle model at: " << glbPath << std::endl;
+    if (ModelLoaderGLB::loadFromFile(glbPath, m_importedModel, manifestPath)) {
+        m_useImportedModel = true;
+        std::cout << "[VehicleRendererGL] Primary vehicle visual model: " << m_importedModel.modelName
+                  << " (" << m_importedModel.totalTriangles << " triangles, "
+                  << m_importedModel.chassisParts.size() << " chassis nodes)" << std::endl;
+    } else {
+        m_useImportedModel = false;
+        std::cout << "[VehicleRendererGL] Notice: Blender model not loaded; falling back to Procedural Sports Coupe." << std::endl;
+    }
+
+    // Allocate storage for per-wheel imported part transforms
+    for (int i = 0; i < 4; ++i) {
+        m_importedWheelPartMatrices[static_cast<size_t>(i)].resize(
+            m_importedModel.wheelParts[static_cast<size_t>(i)].size(),
+            Mat4::identity()
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Build Procedural Sports Coupe (Fallback & Instant Hot-Swap Option)
+    // -------------------------------------------------------------------------
     MaterialProps bodyPaintMat{};
     bodyPaintMat.baseColor = Color3::fromHex(0x1e66f5);
     bodyPaintMat.metalness = 0.55f;
@@ -61,31 +90,26 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
         m_chassisParts.push_back(std::move(p));
     };
 
-    // 1. Main lower body shell
+    // Main lower body shell
     addPart(Mesh::createBox(w, 0.48f, l), Vec3{0.0, 0.24, 0.0}, 0.0, bodyPaintMat);
-
-    // 2. Sculpted hood & front nose slope
+    // Sculpted hood & front nose slope
     addPart(Mesh::createBox(w * 0.92f, 0.12f, 1.35f), Vec3{0.0, 0.49, 1.32}, 0.06, bodyPaintMat);
-
-    // 3. Cabin greenhouse
+    // Cabin greenhouse
     addPart(Mesh::createBox(w * 0.82f, 0.44f, 1.95f), Vec3{0.0, 0.66, -0.18}, 0.0, bodyPaintMat);
-
-    // 4. Front aerodynamic splitter & grille
+    // Front aerodynamic splitter & grille
     addPart(Mesh::createBox(w * 1.01f, 0.06f, 0.35f), Vec3{0.0, 0.03, l * 0.5 - 0.12}, 0.0, m_darkTrimMat);
     addPart(Mesh::createBox(w * 0.62f, 0.22f, 0.08f), Vec3{0.0, 0.20, l * 0.5 - 0.01}, 0.0, m_darkTrimMat);
-
-    // 5. Side skirts & rear diffuser
+    // Side skirts & rear diffuser
     addPart(Mesh::createBox(w * 1.02f, 0.08f, 2.10f), Vec3{0.0, 0.04, 0.0}, 0.0, m_darkTrimMat);
     addPart(Mesh::createBox(w * 0.96f, 0.12f, 0.25f), Vec3{0.0, 0.06, -l * 0.5 + 0.10}, 0.0, m_darkTrimMat);
-
-    // 6. Rear trunk lip spoiler
+    // Rear trunk lip spoiler
     addPart(Mesh::createBox(w * 0.90f, 0.04f, 0.20f), Vec3{0.0, 0.60, -l * 0.5 + 0.14}, -0.14, m_darkTrimMat);
 
-    // 7. Front Headlights (+Z front)
+    // Front Headlights (+Z front)
     addPart(Mesh::createBox(0.32f, 0.10f, 0.08f), Vec3{+w * 0.35, 0.34, l * 0.5 - 0.02}, 0.0, headlightMat);
     addPart(Mesh::createBox(0.32f, 0.10f, 0.08f), Vec3{-w * 0.35, 0.34, l * 0.5 - 0.02}, 0.0, headlightMat);
 
-    // 8. Rear Brake Lights & Reverse Lights (-Z rear)
+    // Rear Brake Lights & Reverse Lights (-Z rear)
     addPart(Mesh::createBox(0.38f, 0.11f, 0.06f), Vec3{+w * 0.34, 0.36, -l * 0.5 + 0.01}, 0.0, brakeLightMat, true, false);
     addPart(Mesh::createBox(0.38f, 0.11f, 0.06f), Vec3{-w * 0.34, 0.36, -l * 0.5 + 0.01}, 0.0, brakeLightMat, true, false);
     addPart(Mesh::createBox(0.65f, 0.035f, 0.04f), Vec3{0.0, 0.52, -l * 0.5 + 0.02}, 0.0, brakeLightMat, true, false);
@@ -93,12 +117,12 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     addPart(Mesh::createBox(0.16f, 0.05f, 0.065f), Vec3{+w * 0.24, 0.30, -l * 0.5 + 0.01}, 0.0, reverseLightMat, false, true);
     addPart(Mesh::createBox(0.16f, 0.05f, 0.065f), Vec3{-w * 0.24, 0.30, -l * 0.5 + 0.01}, 0.0, reverseLightMat, false, true);
 
-    // 9. Windshield, rear window, and side windows (rendered last with alpha blending)
+    // Windshield, rear window, and side windows
     addPart(Mesh::createBox(w * 0.78f, 0.42f, 0.06f), Vec3{0.0, 0.65, 0.80}, -0.52, glassMat, false, false, true);
     addPart(Mesh::createBox(w * 0.78f, 0.42f, 0.06f), Vec3{0.0, 0.65, -1.16}, 0.56, glassMat, false, false, true);
     addPart(Mesh::createBox(w * 0.84f, 0.32f, 1.55f), Vec3{0.0, 0.67, -0.18}, 0.0, glassMat, false, false, true);
 
-    // 10. Interior Steering Wheel
+    // Interior Steering Wheel
     m_steerRimMesh = Mesh::createTorusZ(0.16f, 0.022f, 8, 20);
     m_steerSpokeMesh = Mesh::createBox(0.30f, 0.025f, 0.02f);
     m_steerMarkerMesh = Mesh::createBox(0.03f, 0.05f, 0.05f);
@@ -106,7 +130,7 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     m_markerMat.baseColor = Color3::fromHex(0xef4444);
     m_markerMat.roughness = 0.4f;
 
-    // 11. Build Left & Right Wheel Assembly Templates
+    // Procedural Left & Right Wheel Templates
     MaterialProps tireMat{};
     tireMat.baseColor = Color3::fromHex(0x1a1d24);
     tireMat.roughness = 0.85f;
@@ -133,14 +157,12 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     m_caliperMesh = Mesh::createBox(0.065f, 0.14f, 0.09f);
 
     auto buildWheelSide = [&](std::vector<WheelSubPart>& outParts, bool isLeft) {
-        // Tire cylinder along X
         outParts.push_back(WheelSubPart{
             Mesh::createCylinderX(m_wheelRadius, m_wheelRadius, m_wheelWidth, 28),
             Mat4::identity(),
             tireMat
         });
 
-        // Rim barrel
         const float rimRadius = m_wheelRadius * 0.66f;
         outParts.push_back(WheelSubPart{
             Mesh::createCylinderX(rimRadius, rimRadius, m_wheelWidth * 1.01f, 20),
@@ -148,7 +170,6 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
             alloyMat
         });
 
-        // 5-Spoke pattern + high-visibility rotation indicator spoke
         const double outboardX = isLeft ? (m_wheelWidth * 0.48) : (-m_wheelWidth * 0.48);
         constexpr int numSpokes = 5;
         for (int s = 0; s < numSpokes; ++s) {
@@ -166,7 +187,6 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
             });
         }
 
-        // Ventilated Brake Rotor
         const float rotorRadius = m_wheelRadius * 0.50f;
         const double rotorX = isLeft ? (-m_wheelWidth * 0.12) : (m_wheelWidth * 0.12);
         outParts.push_back(WheelSubPart{
@@ -179,30 +199,46 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     buildWheelSide(m_wheelPartsLeft, true);
     buildWheelSide(m_wheelPartsRight, false);
 
-    // 12. Coilover Suspension Strut Mesh
+    // Coilover Suspension Strut Mesh
     m_strutMesh = Mesh::createCylinderY(0.032f, 0.028f, 1.0f, 10);
     m_strutMat = MaterialProps{};
     m_strutMat.baseColor = Color3::fromHex(0xeab308);
     m_strutMat.metalness = 0.65f;
     m_strutMat.roughness = 0.35f;
+
+    // Debug Sphere
+    m_debugSphereMesh = Mesh::createSphere(0.05f, 12, 12);
 }
 
 void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double alpha) {
     const InterpolatedVehicleTransforms interp = vehicle.getInterpolatedTransforms(alpha);
 
+    m_vehiclePos = interp.chassisPosition;
+    m_vehicleRot = interp.chassisRotation;
     m_chassisWorldMatrix = Mat4::fromTRS(interp.chassisPosition, interp.chassisRotation);
     m_steerWheelAngleZ = -vehicle.centerSteeringAngle * 14.0;
 
     m_isBraking = (vehicle.currentInputs.brake > 0.05 || vehicle.currentInputs.handbrake > 0.05);
     m_isReverse = (vehicle.drivetrain.gearIndex == 0);
 
+    // Compute imported model chassis matrix (offset relative to physics CoM)
+    m_importedChassisWorldMatrix = Mat4::multiply(
+        m_chassisWorldMatrix,
+        Mat4::fromTranslation(m_importedModel.chassisCenterOffset)
+    );
+
     const float rotorRadius = m_wheelRadius * 0.50f;
+
     for (int i = 0; i < 4; ++i) {
         const Vec3& wPos = interp.wheelPositions[static_cast<size_t>(i)];
         const Quat& wRot = interp.wheelRotations[static_cast<size_t>(i)];
         const WheelState& ws = vehicle.wheels[static_cast<size_t>(i)];
         const bool isLeft = (i == 0 || i == 2);
 
+        m_wheelCentersWorld[static_cast<size_t>(i)] = wPos;
+        m_wheelMountsWorld[static_cast<size_t>(i)] = ws.mountPointWorld;
+
+        // 1. Procedural wheel transform
         m_wheelWorldMatrices[static_cast<size_t>(i)] = Mat4::fromTRS(wPos, wRot);
 
         const Quat steerQuat = quatFromAxisAngle(Vec3{0.0, 1.0, 0.0}, ws.steeringAngle);
@@ -214,6 +250,7 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
         );
         m_knuckleWorldMatrices[static_cast<size_t>(i)] = Mat4::multiply(knuckleBase, caliperLocal);
 
+        // Suspension strut transform connecting mount to wheel hub
         const Vec3& mount = ws.mountPointWorld;
         const Vec3 mid{
             0.5 * (mount.x + wPos.x),
@@ -226,90 +263,300 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
             interp.chassisRotation,
             Vec3{1.0, strutLen, 1.0}
         );
+
+        // 2. Imported model wheel subparts transforms
+        if (m_importedModel.loadedSuccessfully) {
+            const auto& parts = m_importedModel.wheelParts[static_cast<size_t>(i)];
+            auto& outMats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
+            if (outMats.size() != parts.size()) {
+                outMats.resize(parts.size(), Mat4::identity());
+            }
+
+            // Wheel steered + spin orientation
+            const Quat spinQuat = quatFromAxisAngle(Vec3{1.0, 0.0, 0.0}, ws.rotationAngle);
+            const Quat wheelWorldQuat = quatMultiply(knuckleQuat, spinQuat);
+            const Mat4 wheelBaseWorld = Mat4::fromTRS(wPos, wheelWorldQuat);
+
+            for (size_t k = 0; k < parts.size(); ++k) {
+                const auto& p = parts[k];
+                // Offset of this sub-element (rim, tire, cap) from the computed quadrant wheel center
+                const Mat4 subPartLocal = Mat4::fromTRS(
+                    p.offsetFromWheelCenter,
+                    p.wheelLocalRotation,
+                    p.wheelLocalScale
+                );
+                outMats[k] = Mat4::multiply(wheelBaseWorld, subPartLocal);
+            }
+        }
     }
 }
 
 void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
-    for (const auto& part : m_chassisParts) {
-        if (!part.material.castShadows || part.isTransparent) continue;
-        depthShader.setMat4("uModel", Mat4::multiply(m_chassisWorldMatrix, part.localMatrix));
-        part.mesh.draw();
-    }
+    if (m_useImportedModel && m_importedModel.loadedSuccessfully) {
+        // Shadow pass for imported Blender model
+        for (const auto& part : m_importedModel.chassisParts) {
+            if (!part.material.castShadows || part.isTransparent) continue;
+            depthShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));
+            part.mesh.draw();
+        }
 
-    for (int i = 0; i < 4; ++i) {
-        const auto& wheelParts = (i == 0 || i == 2) ? m_wheelPartsLeft : m_wheelPartsRight;
-        for (const auto& wp : wheelParts) {
-            depthShader.setMat4("uModel", Mat4::multiply(m_wheelWorldMatrices[static_cast<size_t>(i)], wp.localMatrix));
-            wp.mesh.draw();
+        for (int i = 0; i < 4; ++i) {
+            const auto& parts = m_importedModel.wheelParts[static_cast<size_t>(i)];
+            const auto& mats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
+            for (size_t k = 0; k < parts.size(); ++k) {
+                if (!parts[k].material.castShadows) continue;
+                depthShader.setMat4("uModel", mats[k]);
+                parts[k].mesh.draw();
+            }
+        }
+    } else {
+        // Shadow pass for procedural coupe
+        for (const auto& part : m_chassisParts) {
+            if (!part.material.castShadows || part.isTransparent) continue;
+            depthShader.setMat4("uModel", Mat4::multiply(m_chassisWorldMatrix, part.localMatrix));
+            part.mesh.draw();
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            const auto& wheelParts = (i == 0 || i == 2) ? m_wheelPartsLeft : m_wheelPartsRight;
+            for (const auto& wp : wheelParts) {
+                depthShader.setMat4("uModel", Mat4::multiply(m_wheelWorldMatrices[static_cast<size_t>(i)], wp.localMatrix));
+                wp.mesh.draw();
+            }
         }
     }
 }
 
 void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
-    // 1. Opaque chassis parts
-    for (const auto& part : m_chassisParts) {
-        if (part.isTransparent) continue;
-        MaterialProps mat = part.material;
-        if (part.isBrakeLight) {
-            mat.baseColor = Color3::fromHex(m_isBraking ? 0xff1e1e : 0x660808);
-            mat.emissiveColor = Color3::fromHex(m_isBraking ? 0xff1e1e : 0x330000);
-            mat.emissiveIntensity = m_isBraking ? 3.2f : 0.35f;
-        } else if (part.isReverseLight) {
-            mat.emissiveIntensity = m_isReverse ? 2.5f : 0.0f;
+    if (m_useImportedModel && m_importedModel.loadedSuccessfully) {
+        // ---------------------------------------------------------------------
+        // IMPORTED BLENDER VEHICLE MODEL (BMW M4 Coupe)
+        // ---------------------------------------------------------------------
+
+        // 1. Opaque Chassis Parts (Body, hood, trunk, fenders, interior, spoilers)
+        for (const auto& part : m_importedModel.chassisParts) {
+            if (part.isTransparent) continue;
+            MaterialProps mat = part.material;
+
+            if (part.isBrakeLight) {
+                mat.baseColor = Color3::fromHex(m_isBraking ? 0xff1e1e : 0x660808);
+                mat.emissiveColor = Color3::fromHex(m_isBraking ? 0xff1e1e : 0x330000);
+                mat.emissiveIntensity = m_isBraking ? 3.6f : 0.40f;
+            } else if (part.isReverseLight) {
+                mat.emissiveIntensity = m_isReverse ? 2.5f : 0.0f;
+            }
+
+            mainShader.applyMaterial(mat);
+            mainShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));
+            part.mesh.draw();
         }
-        mainShader.applyMaterial(mat);
-        mainShader.setMat4("uModel", Mat4::multiply(m_chassisWorldMatrix, part.localMatrix));
-        part.mesh.draw();
+
+        // 2. Four Independent Wheels (Rims, Tires, Center Caps with realistic PBR materials)
+        for (int i = 0; i < 4; ++i) {
+            const auto& parts = m_importedModel.wheelParts[static_cast<size_t>(i)];
+            const auto& mats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
+
+            for (size_t k = 0; k < parts.size(); ++k) {
+                mainShader.applyMaterial(parts[k].material);
+                mainShader.setMat4("uModel", mats[k]);
+                parts[k].mesh.draw();
+            }
+
+            // Visible yellow coilover suspension struts connecting to chassis mounts
+            mainShader.applyMaterial(m_strutMat);
+            mainShader.setMat4("uModel", m_strutWorldMatrices[static_cast<size_t>(i)]);
+            m_strutMesh.draw();
+        }
+
+        // 3. Transparent Cabin Glass & Light Lenses (rendered with depth test + alpha blending)
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        for (const auto& part : m_importedModel.chassisParts) {
+            if (!part.isTransparent) continue;
+            mainShader.applyMaterial(part.material);
+            mainShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));
+            part.mesh.draw();
+        }
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+
+    } else {
+        // ---------------------------------------------------------------------
+        // PROCEDURAL SPORTS COUPE
+        // ---------------------------------------------------------------------
+
+        // 1. Opaque chassis parts
+        for (const auto& part : m_chassisParts) {
+            if (part.isTransparent) continue;
+            MaterialProps mat = part.material;
+            if (part.isBrakeLight) {
+                mat.baseColor = Color3::fromHex(m_isBraking ? 0xff1e1e : 0x660808);
+                mat.emissiveColor = Color3::fromHex(m_isBraking ? 0xff1e1e : 0x330000);
+                mat.emissiveIntensity = m_isBraking ? 3.2f : 0.35f;
+            } else if (part.isReverseLight) {
+                mat.emissiveIntensity = m_isReverse ? 2.5f : 0.0f;
+            }
+            mainShader.applyMaterial(mat);
+            mainShader.setMat4("uModel", Mat4::multiply(m_chassisWorldMatrix, part.localMatrix));
+            part.mesh.draw();
+        }
+
+        // 2. Interior steering wheel
+        const Quat tiltQuat = quatFromAxisAngle(Vec3{1.0, 0.0, 0.0}, 0.35);
+        const Quat spinQuat = quatFromAxisAngle(Vec3{0.0, 0.0, 1.0}, m_steerWheelAngleZ);
+        const Mat4 steerBase = Mat4::multiply(
+            m_chassisWorldMatrix,
+            Mat4::fromTRS(Vec3{0.36, 0.54, 0.45}, quatMultiply(tiltQuat, spinQuat))
+        );
+        mainShader.applyMaterial(m_darkTrimMat);
+        mainShader.setMat4("uModel", steerBase);
+        m_steerRimMesh.draw();
+        m_steerSpokeMesh.draw();
+
+        mainShader.applyMaterial(m_markerMat);
+        mainShader.setMat4("uModel", Mat4::multiply(steerBase, Mat4::fromTRS(Vec3{0.0, 0.16, 0.0}, quatIdentity())));
+        m_steerMarkerMesh.draw();
+
+        // 3. Four independent wheels, brake calipers, and coilover struts
+        for (int i = 0; i < 4; ++i) {
+            const auto& wheelParts = (i == 0 || i == 2) ? m_wheelPartsLeft : m_wheelPartsRight;
+            for (const auto& wp : wheelParts) {
+                mainShader.applyMaterial(wp.material);
+                mainShader.setMat4("uModel", Mat4::multiply(m_wheelWorldMatrices[static_cast<size_t>(i)], wp.localMatrix));
+                wp.mesh.draw();
+            }
+
+            mainShader.applyMaterial(m_caliperMat);
+            mainShader.setMat4("uModel", m_knuckleWorldMatrices[static_cast<size_t>(i)]);
+            m_caliperMesh.draw();
+
+            mainShader.applyMaterial(m_strutMat);
+            mainShader.setMat4("uModel", m_strutWorldMatrices[static_cast<size_t>(i)]);
+            m_strutMesh.draw();
+        }
+
+        // 4. Transparent cabin glass
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        for (const auto& part : m_chassisParts) {
+            if (!part.isTransparent) continue;
+            mainShader.applyMaterial(part.material);
+            mainShader.setMat4("uModel", Mat4::multiply(m_chassisWorldMatrix, part.localMatrix));
+            part.mesh.draw();
+        }
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
     }
+}
 
-    // 2. Interior steering wheel (visible through cabin glass)
-    const Quat tiltQuat = quatFromAxisAngle(Vec3{1.0, 0.0, 0.0}, 0.35);
-    const Quat spinQuat = quatFromAxisAngle(Vec3{0.0, 0.0, 1.0}, m_steerWheelAngleZ);
-    const Mat4 steerBase = Mat4::multiply(
-        m_chassisWorldMatrix,
-        Mat4::fromTRS(Vec3{0.36, 0.54, 0.45}, quatMultiply(tiltQuat, spinQuat))
-    );
-    mainShader.applyMaterial(m_darkTrimMat);
-    mainShader.setMat4("uModel", steerBase);
-    m_steerRimMesh.draw();
-    m_steerSpokeMesh.draw();
+void VehicleRendererGL::renderVisualDebug(Shader& lineShader, Shader& mainShader, const Mat4& viewProj) const {
+    if (!m_showVisualDebug) return;
 
-    mainShader.applyMaterial(m_markerMat);
-    mainShader.setMat4("uModel", Mat4::multiply(steerBase, Mat4::fromTRS(Vec3{0.0, 0.16, 0.0}, quatIdentity())));
-    m_steerMarkerMesh.draw();
+    std::vector<DebugLineVertex> lines;
+    auto addDebugLine = [&](const Vec3& a, const Vec3& b, const Color3& col) {
+        lines.push_back(DebugLineVertex{static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), col.r, col.g, col.b});
+        lines.push_back(DebugLineVertex{static_cast<float>(b.x), static_cast<float>(b.y), static_cast<float>(b.z), col.r, col.g, col.b});
+    };
 
-    // 3. Four independent wheels, brake calipers, and coilover struts
+    const VehicleBasis basis = getVehicleBasis(m_vehicleRot);
+
+    // 1. Vehicle Center of Mass & Local Coordinate Frame Axes
+    addDebugLine(m_vehiclePos, vec3Add(m_vehiclePos, vec3Scale(basis.forward, 1.8)), Color3{1.0f, 0.2f, 0.2f}); // Forward (+Z) Red
+    addDebugLine(m_vehiclePos, vec3Add(m_vehiclePos, vec3Scale(basis.up, 1.2)),      Color3{0.2f, 1.0f, 0.2f}); // Up (+Y) Green
+    addDebugLine(m_vehiclePos, vec3Add(m_vehiclePos, vec3Scale(basis.left, 1.2)),    Color3{0.2f, 0.5f, 1.0f}); // Left (+X) Blue
+
+    // 2. Wheel Mount to Wheel Center Strut Lines & Wheel Spin Axes
     for (int i = 0; i < 4; ++i) {
-        const auto& wheelParts = (i == 0 || i == 2) ? m_wheelPartsLeft : m_wheelPartsRight;
-        for (const auto& wp : wheelParts) {
-            mainShader.applyMaterial(wp.material);
-            mainShader.setMat4("uModel", Mat4::multiply(m_wheelWorldMatrices[static_cast<size_t>(i)], wp.localMatrix));
-            wp.mesh.draw();
+        const Vec3& center = m_wheelCentersWorld[static_cast<size_t>(i)];
+        const Vec3& mount = m_wheelMountsWorld[static_cast<size_t>(i)];
+        // Suspension strut travel line (Yellow)
+        addDebugLine(mount, center, Color3{1.0f, 0.9f, 0.1f});
+
+        // Wheel axle spin axis (Magenta)
+        addDebugLine(
+            vec3Add(center, vec3Scale(basis.left, 0.35)),
+            vec3Add(center, vec3Scale(basis.right, 0.35)),
+            Color3{0.9f, 0.2f, 0.9f}
+        );
+    }
+
+    // 3. Imported Model Bounding Box Wireframe (Cyan)
+    if (m_importedModel.loadedSuccessfully) {
+        const Vec3 bMin = m_importedModel.aabbMin;
+        const Vec3 bMax = m_importedModel.aabbMax;
+        const Color3 boxCol{0.2f, 0.9f, 1.0f};
+
+        // 8 Corners of the AABB in model space
+        const std::array<Vec3, 8> cornersLocal = {
+            Vec3{bMin.x, bMin.y, bMin.z},
+            Vec3{bMax.x, bMin.y, bMin.z},
+            Vec3{bMax.x, bMin.y, bMax.z},
+            Vec3{bMin.x, bMin.y, bMax.z},
+            Vec3{bMin.x, bMax.y, bMin.z},
+            Vec3{bMax.x, bMax.y, bMin.z},
+            Vec3{bMax.x, bMax.y, bMax.z},
+            Vec3{bMin.x, bMax.y, bMax.z}
+        };
+
+        std::array<Vec3, 8> cornersWorld{};
+        for (size_t c = 0; c < 8; ++c) {
+            cornersWorld[c] = mat4TransformPoint(m_importedChassisWorldMatrix, cornersLocal[c]);
         }
 
-        // Fixed performance brake caliper on knuckle
-        mainShader.applyMaterial(m_caliperMat);
-        mainShader.setMat4("uModel", m_knuckleWorldMatrices[static_cast<size_t>(i)]);
-        m_caliperMesh.draw();
-
-        // Visible yellow suspension strut
-        mainShader.applyMaterial(m_strutMat);
-        mainShader.setMat4("uModel", m_strutWorldMatrices[static_cast<size_t>(i)]);
-        m_strutMesh.draw();
+        // Draw 12 bounding box edges
+        // Bottom ring
+        addDebugLine(cornersWorld[0], cornersWorld[1], boxCol);
+        addDebugLine(cornersWorld[1], cornersWorld[2], boxCol);
+        addDebugLine(cornersWorld[2], cornersWorld[3], boxCol);
+        addDebugLine(cornersWorld[3], cornersWorld[0], boxCol);
+        // Top ring
+        addDebugLine(cornersWorld[4], cornersWorld[5], boxCol);
+        addDebugLine(cornersWorld[5], cornersWorld[6], boxCol);
+        addDebugLine(cornersWorld[6], cornersWorld[7], boxCol);
+        addDebugLine(cornersWorld[7], cornersWorld[4], boxCol);
+        // Vertical pillars
+        addDebugLine(cornersWorld[0], cornersWorld[4], boxCol);
+        addDebugLine(cornersWorld[1], cornersWorld[5], boxCol);
+        addDebugLine(cornersWorld[2], cornersWorld[6], boxCol);
+        addDebugLine(cornersWorld[3], cornersWorld[7], boxCol);
     }
 
-    // 4. Transparent cabin glass
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE);
-    for (const auto& part : m_chassisParts) {
-        if (!part.isTransparent) continue;
-        mainShader.applyMaterial(part.material);
-        mainShader.setMat4("uModel", Mat4::multiply(m_chassisWorldMatrix, part.localMatrix));
-        part.mesh.draw();
+    // Render debug lines
+    if (!lines.empty()) {
+        if (m_debugLineVao == 0) {
+            glGenVertexArrays(1, &m_debugLineVao);
+            glGenBuffers(1, &m_debugLineVbo);
+        }
+
+        glBindVertexArray(m_debugLineVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_debugLineVbo);
+        glBufferData(GL_ARRAY_BUFFER, lines.size() * sizeof(DebugLineVertex), lines.data(), GL_DYNAMIC_DRAW);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DebugLineVertex), reinterpret_cast<void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DebugLineVertex), reinterpret_cast<void*>(offsetof(DebugLineVertex, r)));
+
+        lineShader.use();
+        lineShader.setMat4("uViewProj", viewProj);
+        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lines.size()));
+        glBindVertexArray(0);
     }
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+
+    // 4. Render pivot marker spheres at physical wheel centers
+    MaterialProps sphereMat{};
+    sphereMat.baseColor = Color3{1.0f, 0.2f, 0.8f};
+    sphereMat.roughness = 0.3f;
+    mainShader.use();
+
+    for (int i = 0; i < 4; ++i) {
+        sphereMat.baseColor = (i < 2) ? Color3{0.2f, 1.0f, 0.4f} : Color3{1.0f, 0.4f, 0.2f};
+        mainShader.applyMaterial(sphereMat);
+        mainShader.setMat4("uModel", Mat4::fromTRS(m_wheelCentersWorld[static_cast<size_t>(i)], quatIdentity()));
+        m_debugSphereMesh.draw();
+    }
 }
 
 } // namespace torquelab
