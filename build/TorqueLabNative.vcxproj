@@ -467,6 +467,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\renderer\TrackRendererGL.cpp" />
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\renderer\DebugOverlayGL.cpp" />
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\renderer\CameraControllerGL.cpp" />
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\ControllerConfig.cpp" />
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\VibrationManager.cpp" />
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\InputControllerGLFW.cpp" />
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\ui\ImGuiDashboard.cpp" />
   </ItemGroup>

@@ -57,6 +57,7 @@
 		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
 		<BuildDependency Project="TorqueLabPhysics.vcxproj"/>
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
 		<BuildDependency Project="vhacd_lib.vcxproj"/>
 	</Project>
 	<Project Path="TorqueLabPhysics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="519818b1-a536-3757-8e12-8e8f91bab3da">

@@ -39,6 +39,7 @@ private:
     static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
     static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
     static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+    static void joystickCallback(int jid, int event);
 
     void renderFrame(double alpha);
     void shutdown();
@@ -47,6 +48,7 @@ private:
     bool m_imguiInitialized{false};
     int m_fbWidth{1440};
     int m_fbHeight{900};
+    int m_currentPresetIndex{0};
 
     bool m_mouseDragging{false};
     double m_prevMouseX{0.0};

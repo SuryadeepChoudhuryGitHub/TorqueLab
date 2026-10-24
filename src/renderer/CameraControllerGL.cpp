@@ -46,6 +46,11 @@ void CameraControllerGL::onMouseScroll(double scrollDeltaY) {
     }
 }
 
+void CameraControllerGL::setLookAroundStick(double stickX, double stickY) {
+    m_lookStickX = stickX;
+    m_lookStickY = stickY;
+}
+
 void CameraControllerGL::update(const VehicleDynamics& vehicle, double alpha, double dtRender) {
     const InterpolatedVehicleTransforms interp = vehicle.getInterpolatedTransforms(alpha);
     const Vec3& pos = interp.chassisPosition;
@@ -73,19 +78,48 @@ void CameraControllerGL::update(const VehicleDynamics& vehicle, double alpha, do
             m_smoothedHeight = lerp(m_smoothedHeight, pos.y + followHeight, tY);
         }
 
+        // Forza Horizon-style right-stick free-look in Chase Cam
+        const double stickMag = std::hypot(m_lookStickX, m_lookStickY);
+        if (stickMag > 0.08) {
+            const double targetYaw = -m_lookStickX * 3.14159265;
+            const double targetPitch = -m_lookStickY * 0.45;
+            const double tLook = clamp(1.0 - std::exp(-14.0 * dtRender), 0.05, 1.0);
+            m_lookAngleYaw = lerp(m_lookAngleYaw, targetYaw, tLook);
+            m_lookAnglePitch = lerp(m_lookAnglePitch, targetPitch, tLook);
+        } else {
+            // Smoothly auto-recenter behind the vehicle when the stick is released
+            const double tRecenter = clamp(1.0 - std::exp(-9.0 * dtRender), 0.05, 1.0);
+            m_lookAngleYaw = lerp(m_lookAngleYaw, 0.0, tRecenter);
+            m_lookAnglePitch = lerp(m_lookAnglePitch, 0.0, tRecenter);
+        }
+
+        const double cy = std::cos(m_lookAngleYaw);
+        const double sy = std::sin(m_lookAngleYaw);
+        const Vec3 lookForward{
+            m_smoothedForward.x * cy + m_smoothedForward.z * sy,
+            0.0,
+            -m_smoothedForward.x * sy + m_smoothedForward.z * cy
+        };
+        const double pitchHeightOffset = m_lookAnglePitch * 2.2;
+
         m_position = Vec3{
-            pos.x - m_smoothedForward.x * followDistance,
-            m_smoothedHeight,
-            pos.z - m_smoothedForward.z * followDistance
+            pos.x - lookForward.x * followDistance,
+            m_smoothedHeight + pitchHeightOffset,
+            pos.z - lookForward.z * followDistance
         };
         m_currentLookAt = Vec3{
-            pos.x + m_smoothedForward.x * 2.4,
-            pos.y + 0.65,
-            pos.z + m_smoothedForward.z * 2.4
+            pos.x + lookForward.x * 2.4,
+            pos.y + 0.65 - pitchHeightOffset * 0.4,
+            pos.z + lookForward.z * 2.4
         };
         m_up = Vec3{0.0, 1.0, 0.0};
         m_viewMatrix = Mat4::lookAt(m_position, m_currentLookAt, m_up);
     } else if (mode == CameraMode::Orbit) {
+        if (std::abs(m_lookStickX) > 0.08 || std::abs(m_lookStickY) > 0.08) {
+            m_orbitYaw -= m_lookStickX * 2.6 * dtRender;
+            m_orbitPitch = clamp(m_orbitPitch - m_lookStickY * 2.0 * dtRender, 0.06, 1.45);
+        }
+
         const double vehYaw = std::atan2(flatForward.x, flatForward.z);
         const double totalYaw = vehYaw + m_orbitYaw;
         const double horizDist = m_orbitDistance * std::cos(m_orbitPitch);

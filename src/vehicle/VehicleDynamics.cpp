@@ -233,6 +233,9 @@ VehicleDynamics::VehicleDynamics(
             vec3Scale(basis.down, eqLen)
         );
     }
+    m_prevWheelInContact.fill(true);
+    m_latchedCollision = CollisionImpactEvent{};
+    m_latchedSuspension = SuspensionHapticEvent{};
     capturePreviousTransforms();
 }
 
@@ -250,6 +253,7 @@ void VehicleDynamics::capturePreviousTransforms() {
 
 void VehicleDynamics::step(double dt) {
     capturePreviousTransforms();
+    body.prepareForSimulationStep();
     simTime += dt;
 
     if (body.getRigidBody()) {
@@ -388,6 +392,56 @@ void VehicleDynamics::step(double dt) {
         w.wheelCenterWorld = vec3Add(w.mountPointWorld, vec3Scale(chassisDown, w.suspensionLength));
         w.contactPointWorld = vec3Add(w.wheelCenterWorld, vec3Scale(chassisDown, config.wheelRadius));
         w.contactNormalWorld = basis.up;
+    }
+
+    // Detect suspension haptic events (jump landings, bump-stop bottom-out, sharp curb/bump strikes)
+    for (int i = 0; i < 4; ++i) {
+        const WheelState& w = wheels[static_cast<size_t>(i)];
+        const bool wasInContact = m_prevWheelInContact[static_cast<size_t>(i)];
+        const float latBias = (i == 0 || i == 2) ? +0.75f : -0.75f;
+
+        if (w.inContact) {
+            // Touchdown / Jump Landing
+            if (!wasInContact) {
+                const Vec3 mountVelWorld = body.getVelocityAtWorldPoint(w.mountPointWorld);
+                const double downwardMountSpeed = -vec3Dot(mountVelWorld, basis.up);
+                if (downwardMountSpeed > 0.6) {
+                    const float sev = static_cast<float>(clamp((downwardMountSpeed - 0.6) / 2.5, 0.15, 1.0));
+                    if (sev > m_latchedSuspension.severity) {
+                        m_latchedSuspension.occurred = true;
+                        m_latchedSuspension.severity = sev;
+                        m_latchedSuspension.lateralBias = latBias;
+                        m_latchedSuspension.isHardLanding = true;
+                        m_latchedSuspension.isBottomOut = false;
+                    }
+                }
+            }
+
+            // Bump-stop bottom-out (progressive travel limit)
+            if (w.isBottomedOut || w.bumpStopForce > 800.0) {
+                const float sev = static_cast<float>(clamp(w.bumpStopForce / 8000.0, 0.35, 1.0));
+                if (sev > m_latchedSuspension.severity) {
+                    m_latchedSuspension.occurred = true;
+                    m_latchedSuspension.severity = sev;
+                    m_latchedSuspension.lateralBias = latBias;
+                    m_latchedSuspension.isHardLanding = false;
+                    m_latchedSuspension.isBottomOut = true;
+                }
+            }
+
+            // Sharp bump / curb strike (rapid compression velocity dL/dt < -2.2 m/s)
+            if (w.suspensionVelocity < -2.2) {
+                const float sev = static_cast<float>(clamp((-w.suspensionVelocity - 2.2) / 4.0, 0.12, 0.70));
+                if (sev > m_latchedSuspension.severity) {
+                    m_latchedSuspension.occurred = true;
+                    m_latchedSuspension.severity = sev;
+                    m_latchedSuspension.lateralBias = latBias;
+                    m_latchedSuspension.isHardLanding = false;
+                    m_latchedSuspension.isBottomOut = false;
+                }
+            }
+        }
+        m_prevWheelInContact[static_cast<size_t>(i)] = w.inContact;
     }
 
     // 2. Compute Front & Rear Anti-Roll Bar forces
@@ -659,6 +713,14 @@ void VehicleDynamics::step(double dt) {
 void VehicleDynamics::postWorldStep(double dt) {
     body.postStepUpdate(m_world, dt);
 
+    if (body.lastImpactEvent.occurred) {
+        if (!m_latchedCollision.occurred ||
+            body.lastImpactEvent.impactSpeedMps > m_latchedCollision.impactSpeedMps ||
+            body.lastImpactEvent.normalImpulse > m_latchedCollision.normalImpulse) {
+            m_latchedCollision = body.lastImpactEvent;
+        }
+    }
+
     const Vec3 chassisPos = body.getPosition();
     const Quat chassisRot = body.getRotation();
     const VehicleBasis basis = getVehicleBasis(chassisRot);
@@ -716,6 +778,9 @@ void VehicleDynamics::resetVehicle(const Vec3* position, const Quat* rotation) {
             vec3Scale(basis.down, eqLen)
         );
     }
+    m_prevWheelInContact.fill(true);
+    m_latchedCollision = CollisionImpactEvent{};
+    m_latchedSuspension = SuspensionHapticEvent{};
     capturePreviousTransforms();
 }
 
@@ -801,6 +866,10 @@ VehicleTelemetrySnapshot VehicleDynamics::getTelemetrySnapshot() const {
     snap.upDirWorld = basis.up;
     snap.lateralDirWorld = basis.left;
     snap.collisionContactCount = static_cast<int>(body.activeContacts.size());
+    snap.collisionImpact = m_latchedCollision;
+    snap.suspensionImpact = m_latchedSuspension;
+    m_latchedCollision = CollisionImpactEvent{};
+    m_latchedSuspension = SuspensionHapticEvent{};
     snap.numericalSanityOk = sanity;
     return snap;
 }

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <imgui.h>
+#include "input/InputControllerGLFW.h"
 #include "physics/Math3D.h"
 #include "vehicle/VehicleConfig.h"
 
@@ -84,7 +85,8 @@ void ImGuiDashboard::render(
     bool hasImportedModel,
     const std::string& modelName,
     bool visualDebugEnabled,
-    bool collisionWireframeEnabled
+    bool collisionWireframeEnabled,
+    InputControllerGLFW* inputController
 ) {
     if (!paused) {
         m_history.push_back(TelemetrySample{
@@ -110,7 +112,7 @@ void ImGuiDashboard::render(
     }
 
     renderTopBar(paused, cameraLabel, gizmosEnabled, currentQuality, windowWidth, useImportedModel, hasImportedModel, visualDebugEnabled);
-    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled, collisionWireframeEnabled);
+    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled, collisionWireframeEnabled, inputController);
     if (telemetryEnabled) {
         renderRightTelemetryPanel(snap, fps, physicsStepTimeMs, windowWidth, windowHeight);
     }
@@ -121,7 +123,7 @@ void ImGuiDashboard::render(
         ImGui::SetNextWindowPos(ImVec2(windowWidth * 0.5f, 64.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_WindowBg, hexToImVec4(0xd97706, 0.94f));
         if (ImGui::Begin("##PauseBanner", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing)) {
-            ImGui::TextUnformatted("SIMULATION PAUSED — Press P to Resume");
+            ImGui::TextUnformatted("SIMULATION PAUSED — Press P or Start (Options) to Resume");
         }
         ImGui::End();
         ImGui::PopStyleColor();
@@ -253,7 +255,8 @@ void ImGuiDashboard::renderLeftPanels(
     bool hasImportedModel,
     const std::string& modelName,
     bool visualDebugEnabled,
-    bool collisionWireframeEnabled
+    bool collisionWireframeEnabled,
+    InputControllerGLFW* inputController
 ) {
     const float maxPanelHeight = std::max(320.0f, static_cast<float>(windowHeight) - 210.0f);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 60.0f), ImGuiCond_FirstUseEver);
@@ -349,6 +352,8 @@ void ImGuiDashboard::renderLeftPanels(
             ImGui::TextDisabled("T / G:");   ImGui::SameLine(90); ImGui::TextUnformatted("Telemetry / 3D Vectors");
             ImGui::TextDisabled("1 - 7:");   ImGui::SameLine(90); ImGui::TextUnformatted("Teleport Test Zones");
         }
+
+        renderControllerSettings(inputController);
 
         ImGui::Separator();
         ImGui::TextColored(hexToImVec4(0x38bdf8), "LIVE VEHICLE TUNING LAB");
@@ -455,6 +460,223 @@ void ImGuiDashboard::renderLeftPanels(
         }
     }
     ImGui::End();
+}
+
+void ImGuiDashboard::renderControllerSettings(InputControllerGLFW* inputController) {
+    if (!inputController) return;
+
+    if (ImGui::CollapsingHeader("CONTROLLER SETTINGS (FORZA HORIZON PRESET)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const bool connected = inputController->isGamepadConnected();
+        const std::string name = inputController->getActiveGamepadName();
+        const int jid = inputController->getActiveJoystickId();
+        const bool isStandard = inputController->isActiveGamepadStandard();
+        const ControllerFlavor flavor = inputController->getActiveFlavor();
+        auto& settings = inputController->getSettings();
+
+        // 1. Connection & Hardware Status
+        if (connected) {
+            ImGui::TextColored(hexToImVec4(0x34d399), "STATUS: CONNECTED (Port %d)", jid);
+            ImGui::Text("Device:   %s", name.c_str());
+            ImGui::Text("Mapping:  %s", isStandard ? "Standard Gamepad (GLFW Verified)" : "Raw USB Joystick (Fallback)");
+        } else {
+            ImGui::TextColored(hexToImVec4(0xf87171), "STATUS: NO CONTROLLER DETECTED");
+            ImGui::TextDisabled("Plug in an Xbox, PlayStation, or compatible controller.");
+        }
+
+        // Device Selector Dropdown
+        const auto devices = inputController->enumerateDevices();
+        std::vector<std::string> devLabels;
+        devLabels.push_back("Auto-Detect Active (Recommended)");
+        int currentDevIndex = 0;
+        for (size_t i = 0; i < devices.size(); ++i) {
+            std::string label = "Port " + std::to_string(devices[i].joystickId) + ": " + devices[i].name;
+            if (devices[i].joystickId == settings.preferredJoystickId) {
+                currentDevIndex = static_cast<int>(i) + 1;
+            }
+            devLabels.push_back(label);
+        }
+
+        if (ImGui::BeginCombo("Select Device", devLabels[static_cast<size_t>(currentDevIndex)].c_str())) {
+            for (size_t i = 0; i < devLabels.size(); ++i) {
+                const bool isSel = (static_cast<int>(i) == currentDevIndex);
+                if (ImGui::Selectable(devLabels[i].c_str(), isSel)) {
+                    if (i == 0) {
+                        settings.preferredJoystickId = -1;
+                    } else {
+                        settings.preferredJoystickId = devices[i - 1].joystickId;
+                    }
+                    inputController->saveSettings();
+                }
+                if (isSel) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        // Button Glyph / Flavor Display Style
+        int flavorIdx = static_cast<int>(settings.flavor);
+        const char* flavorItems[] = {
+            "Auto (Detect from Device)",
+            "Xbox (A, B, X, Y, RT/LT)",
+            "PlayStation (Cross, Circle, R2/L2)",
+            "Nintendo (B, A, Y, X, ZR/ZL)",
+            "Generic Gamepad"
+        };
+        if (ImGui::Combo("Button Style", &flavorIdx, flavorItems, 5)) {
+            settings.flavor = static_cast<ControllerFlavor>(flavorIdx);
+            inputController->saveSettings();
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(hexToImVec4(0x38bdf8), "LIVE CONTROLLER INPUT METERS");
+
+        // Live visual bars:
+        const float liveThr = inputController->getLiveThrottle();
+        const float liveBrk = inputController->getLiveBrake();
+        const float liveStr = inputController->getLiveSteering();
+        const float liveHb = inputController->getLiveHandbrake();
+        const float lookX = inputController->getLiveLookX();
+        const float lookY = inputController->getLiveLookY();
+
+        // Throttle RT
+        ImGui::TextDisabled("Throttle (RT):"); ImGui::SameLine(110);
+        char thrBuf[32]; std::snprintf(thrBuf, sizeof(thrBuf), "%.0f%%", liveThr * 100.0f);
+        ImGui::ProgressBar(liveThr, ImVec2(-1.0f, 14.0f), thrBuf);
+
+        // Brake LT
+        ImGui::TextDisabled("Brake (LT):"); ImGui::SameLine(110);
+        char brkBuf[32]; std::snprintf(brkBuf, sizeof(brkBuf), "%.0f%%", liveBrk * 100.0f);
+        ImGui::ProgressBar(liveBrk, ImVec2(-1.0f, 14.0f), brkBuf);
+
+        // Steering Left Stick (draw centered bar: -1.0 to +1.0)
+        ImGui::TextDisabled("Steer (LS):"); ImGui::SameLine(110);
+        const float steerBarVal = (liveStr + 1.0f) * 0.5f;
+        char strBuf[32];
+        if (std::abs(liveStr) < 0.01f) std::snprintf(strBuf, sizeof(strBuf), "Center");
+        else if (liveStr > 0.0f) std::snprintf(strBuf, sizeof(strBuf), "L %.0f%%", liveStr * 100.0f);
+        else std::snprintf(strBuf, sizeof(strBuf), "R %.0f%%", -liveStr * 100.0f);
+        ImGui::ProgressBar(steerBarVal, ImVec2(-1.0f, 14.0f), strBuf);
+
+        // Handbrake & Free-Look
+        ImGui::TextDisabled("Handbrake (A):"); ImGui::SameLine(110);
+        ImGui::TextColored(liveHb > 0.5f ? hexToImVec4(0xf87171) : hexToImVec4(0x94a3b8),
+                           liveHb > 0.5f ? "[ENGAGED]" : "[RELEASED]");
+
+        ImGui::TextDisabled("Look (RS):"); ImGui::SameLine(110);
+        ImGui::Text("X: %+.2f | Y: %+.2f", lookX, lookY);
+
+        const float holdProg = inputController->getResetHoldProgress();
+        if (holdProg > 0.0f) {
+            ImGui::TextColored(hexToImVec4(0xfbbf24), "Resetting Vehicle...");
+            ImGui::ProgressBar(holdProg, ImVec2(-1.0f, 14.0f), "");
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(hexToImVec4(0x38bdf8), "ANALOG TUNING & RESPONSE CURVES");
+
+        // Steering Deadzone
+        if (ImGui::SliderFloat("Steer Deadzone", &settings.steerDeadzone, 0.00f, 0.30f, "%.2f")) {
+            inputController->saveSettings();
+        }
+
+        // Steering Sensitivity Exponent
+        if (ImGui::SliderFloat("Steer Sensitivity", &settings.steerSensitivity, 0.50f, 2.50f, "%.2fx")) {
+            inputController->saveSettings();
+        }
+        ImGui::TextDisabled("  (1.0x = Linear, >1.0x = Softer progressive center)");
+
+        // Invert Steering
+        if (ImGui::Checkbox("Invert Steering Axis", &settings.invertSteering)) {
+            inputController->saveSettings();
+        }
+
+        // Trigger Deadzone
+        if (ImGui::SliderFloat("Trigger Deadzone", &settings.triggerDeadzone, 0.00f, 0.25f, "%.2f")) {
+            inputController->saveSettings();
+        }
+
+        // Reset Hold Duration
+        if (ImGui::SliderFloat("Reset Hold Time", &settings.resetHoldDuration, 0.00f, 1.20f, "%.2f s")) {
+            inputController->saveSettings();
+        }
+        ImGui::TextDisabled("  (0.0s = Instant tap, >0.0s = Hold Y to recover)");
+
+        // Vibration
+        ImGui::Spacing();
+        ImGui::TextColored(hexToImVec4(0x38bdf8), "PHYSICS EVENT-DRIVEN HAPTICS (XINPUT)");
+        if (ImGui::Checkbox("Vibration Feedback", &settings.vibrationEnabled)) {
+            inputController->saveSettings();
+        }
+        if (settings.vibrationEnabled) {
+            if (ImGui::SliderFloat("Master Intensity", &settings.vibrationIntensity, 0.0f, 1.0f, "%.0f%%")) {
+                inputController->saveSettings();
+            }
+            if (ImGui::SliderFloat("Collision Scale", &settings.collisionSensitivity, 0.0f, 2.0f, "%.2fx")) {
+                inputController->saveSettings();
+            }
+            if (ImGui::SliderFloat("Suspension Scale", &settings.suspensionSensitivity, 0.0f, 2.0f, "%.2fx")) {
+                inputController->saveSettings();
+            }
+            if (ImGui::SmallButton("Test Vibration Pulse")) {
+                inputController->triggerTestPulse(0.70f, 0.90f, 0.25f);
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("(Physical events: barrier crashes, bump stops, landings)");
+        }
+
+        // Button Mapping & Rebinding Table
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(hexToImVec4(0x38bdf8), "BUTTON MAPPINGS (REBINDABLE)");
+
+        if (inputController->isRebinding()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, hexToImVec4(0xfbbf24));
+            ImGui::Text("PRESS ANY CONTROLLER BUTTON FOR: %s",
+                        getLogicalActionName(inputController->getRebindingAction()).c_str());
+            ImGui::PopStyleColor();
+            if (ImGui::SmallButton("Cancel Rebind")) {
+                inputController->cancelRebinding();
+            }
+        }
+
+        auto renderActionRow = [&](LogicalVehicleAction action, int currentBtn) {
+            ImGui::Text("%-18s", getLogicalActionName(action).c_str());
+            ImGui::SameLine(170.0f);
+            std::string btnLabel = "[" + getGamepadButtonName(currentBtn, flavor) + "]";
+            ImGui::TextColored(hexToImVec4(0x67e8f9), "%-12s", btnLabel.c_str());
+            ImGui::SameLine(255.0f);
+            std::string rebindId = "Rebind##" + std::to_string(static_cast<int>(action));
+            if (ImGui::SmallButton(rebindId.c_str())) {
+                inputController->startRebinding(action);
+            }
+        };
+
+        renderActionRow(LogicalVehicleAction::Handbrake, settings.btnHandbrake);
+        renderActionRow(LogicalVehicleAction::ShiftUp, settings.btnShiftUp);
+        renderActionRow(LogicalVehicleAction::ShiftDown, settings.btnShiftDown);
+        renderActionRow(LogicalVehicleAction::ResetVehicle, settings.btnReset);
+        renderActionRow(LogicalVehicleAction::ChangeCamera, settings.btnChangeCamera);
+        renderActionRow(LogicalVehicleAction::PauseResume, settings.btnPause);
+        renderActionRow(LogicalVehicleAction::ToggleTransmission, settings.btnToggleTransmission);
+        renderActionRow(LogicalVehicleAction::ToggleModel, settings.btnToggleModel);
+        renderActionRow(LogicalVehicleAction::ToggleVisualDebug, settings.btnToggleVisualDebug);
+        renderActionRow(LogicalVehicleAction::ToggleTelemetry, settings.btnToggleTelemetry);
+        renderActionRow(LogicalVehicleAction::ToggleGizmos, settings.btnToggleGizmos);
+        renderActionRow(LogicalVehicleAction::NextPreset, settings.btnNextPreset);
+        renderActionRow(LogicalVehicleAction::PrevPreset, settings.btnPrevPreset);
+
+        ImGui::Spacing();
+        if (ImGui::SmallButton("Reset Forza Defaults")) {
+            inputController->resetSettingsToDefaults();
+            showValidationReport("Restored Forza Horizon default controller bindings", true);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Save Config")) {
+            inputController->saveSettings();
+            showValidationReport("Saved controller settings to settings/controller_config.json", true);
+        }
+    }
 }
 
 void ImGuiDashboard::renderRightTelemetryPanel(

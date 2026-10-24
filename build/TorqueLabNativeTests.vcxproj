@@ -86,7 +86,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /FS /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -113,10 +113,10 @@
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -124,7 +124,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>lib\Debug\TorqueLabPhysics_Debug.lib;lib\Debug\BulletDynamics_Debug.lib;lib\Debug\BulletCollision_Debug.lib;lib\Debug\vhacd_lib_Debug.lib;lib\Debug\LinearMath_Debug.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>lib\Debug\TorqueLabPhysics_Debug.lib;lib\Debug\glfw3_Debug.lib;lib\Debug\BulletDynamics_Debug.lib;lib\Debug\BulletCollision_Debug.lib;lib\Debug\vhacd_lib_Debug.lib;lib\Debug\LinearMath_Debug.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <DataExecutionPrevention></DataExecutionPrevention>
@@ -143,7 +143,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /FS /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -171,10 +171,10 @@
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -182,7 +182,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>lib\Release\TorqueLabPhysics.lib;lib\Release\BulletDynamics.lib;lib\Release\BulletCollision.lib;lib\Release\vhacd_lib.lib;lib\Release\LinearMath.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>lib\Release\TorqueLabPhysics.lib;lib\Release\glfw3.lib;lib\Release\BulletDynamics.lib;lib\Release\BulletCollision.lib;lib\Release\vhacd_lib.lib;lib\Release\LinearMath.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <DataExecutionPrevention></DataExecutionPrevention>
@@ -201,7 +201,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /FS /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -229,10 +229,10 @@
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -240,7 +240,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>lib\MinSizeRel\TorqueLabPhysics_MinsizeRel.lib;lib\MinSizeRel\BulletDynamics_MinsizeRel.lib;lib\MinSizeRel\BulletCollision_MinsizeRel.lib;lib\MinSizeRel\vhacd_lib_MinsizeRel.lib;lib\MinSizeRel\LinearMath_MinsizeRel.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>lib\MinSizeRel\TorqueLabPhysics_MinsizeRel.lib;lib\MinSizeRel\glfw3_MinsizeRel.lib;lib\MinSizeRel\BulletDynamics_MinsizeRel.lib;lib\MinSizeRel\BulletCollision_MinsizeRel.lib;lib\MinSizeRel\vhacd_lib_MinsizeRel.lib;lib\MinSizeRel\LinearMath_MinsizeRel.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <DataExecutionPrevention></DataExecutionPrevention>
@@ -259,7 +259,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /FS /utf-8</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -286,10 +286,10 @@
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\third_party\glad\include;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\src;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\public;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\bullet3-src\Extras\VHACD\inc;D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-src\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -297,7 +297,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>lib\RelWithDebInfo\TorqueLabPhysics_RelWithDebugInfo.lib;lib\RelWithDebInfo\BulletDynamics_RelWithDebugInfo.lib;lib\RelWithDebInfo\BulletCollision_RelWithDebugInfo.lib;lib\RelWithDebInfo\vhacd_lib_RelWithDebugInfo.lib;lib\RelWithDebInfo\LinearMath_RelWithDebugInfo.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>lib\RelWithDebInfo\TorqueLabPhysics_RelWithDebugInfo.lib;lib\RelWithDebInfo\glfw3_RelWithDebugInfo.lib;lib\RelWithDebInfo\BulletDynamics_RelWithDebugInfo.lib;lib\RelWithDebInfo\BulletCollision_RelWithDebugInfo.lib;lib\RelWithDebInfo\vhacd_lib_RelWithDebugInfo.lib;lib\RelWithDebInfo\LinearMath_RelWithDebugInfo.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <DataExecutionPrevention></DataExecutionPrevention>
@@ -373,6 +373,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\tests\native_validation_tests.cpp" />
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\ControllerConfig.cpp" />
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\VibrationManager.cpp" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
@@ -397,6 +399,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ProjectReference Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\TorqueLabPhysics.vcxproj">
       <Project>{519818B1-A536-3757-8E12-8E8F91BAB3DA}</Project>
       <Name>TorqueLabPhysics</Name>
+    </ProjectReference>
+    <ProjectReference Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\_deps\glfw-build\src\glfw.vcxproj">
+      <Project>{3B8495EA-452C-3CDD-AB31-264B092D58DB}</Project>
+      <Name>glfw</Name>
     </ProjectReference>
     <ProjectReference Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\vhacd_lib.vcxproj">
       <Project>{A2811217-E481-3D01-97AF-E56009A41133}</Project>

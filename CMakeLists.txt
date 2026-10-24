@@ -163,6 +163,8 @@ add_executable(TorqueLabNative
     src/renderer/TrackRendererGL.cpp
     src/renderer/DebugOverlayGL.cpp
     src/renderer/CameraControllerGL.cpp
+    src/input/ControllerConfig.cpp
+    src/input/VibrationManager.cpp
     src/input/InputControllerGLFW.cpp
     src/ui/ImGuiDashboard.cpp
 )
@@ -202,6 +204,8 @@ enable_testing()
 
 add_executable(TorqueLabNativeTests
     tests/native_validation_tests.cpp
+    src/input/ControllerConfig.cpp
+    src/input/VibrationManager.cpp
 )
 
 target_include_directories(TorqueLabNativeTests PRIVATE
@@ -210,6 +214,7 @@ target_include_directories(TorqueLabNativeTests PRIVATE
 
 target_link_libraries(TorqueLabNativeTests PRIVATE
     TorqueLabPhysics
+    glfw
 )
 
 add_test(NAME TorqueLabNativeValidationSuite COMMAND TorqueLabNativeTests)

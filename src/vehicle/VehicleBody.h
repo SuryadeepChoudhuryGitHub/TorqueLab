@@ -21,6 +21,17 @@ namespace torquelab {
 struct CollisionContactInfo {
     Vec3 pointWorld{0.0, 0.0, 0.0};
     Vec3 normalWorld{0.0, 1.0, 0.0};
+    double appliedImpulse{0.0};
+    double distance{0.0};
+    int lifeTime{0};
+};
+
+struct CollisionImpactEvent {
+    bool occurred{false};
+    float impactSpeedMps{0.0f};  // Sudden delta-v magnitude (m/s)
+    float normalImpulse{0.0f};   // Solver contact normal impulse (N*s)
+    float lateralBias{0.0f};     // [-1.0 .. +1.0], +1 = Left, -1 = Right
+    bool isChassisScrape{false}; // True if underside / floor scrape
 };
 
 class VehicleBody {
@@ -77,6 +88,11 @@ public:
     void applyTorque(const Vec3& torqueWorld);
 
     /**
+     * Captures pre-step state (e.g. linear velocity) before world->stepSimulation().
+     */
+    void prepareForSimulationStep();
+
+    /**
      * Updates finite-difference linear acceleration and collects active collision contacts.
      * Called once per fixed physics step after world->stepSimulation().
      */
@@ -102,11 +118,13 @@ public:
     Vec3 accelerationWorld{0.0, 0.0, 0.0};
     Vec3 accelerationLocal{0.0, 0.0, 0.0};
     std::vector<CollisionContactInfo> activeContacts;
+    CollisionImpactEvent lastImpactEvent{};
 
 private:
     btDiscreteDynamicsWorld* m_world{nullptr};
     Vec3 m_localCom{0.0, 0.0, 0.0};
     Vec3 m_prevLinearVelocity{0.0, 0.0, 0.0};
+    Vec3 m_preStepLinearVelocity{0.0, 0.0, 0.0};
 
     GeneratedVehicleCollision m_collision;
     std::vector<std::unique_ptr<btCollisionShape>> m_subShapes;

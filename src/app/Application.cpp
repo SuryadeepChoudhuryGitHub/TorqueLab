@@ -11,11 +11,16 @@
 
 namespace torquelab {
 
+namespace {
+Application* s_activeApp = nullptr;
+}
+
 Application::~Application() {
     shutdown();
 }
 
 bool Application::init(int width, int height, bool visible) {
+    s_activeApp = this;
     if (!glfwInit()) {
         std::cerr << "[TorqueLabNative] Failed to initialize GLFW." << std::endl;
         return false;
@@ -236,10 +241,20 @@ bool Application::init(int width, int height, bool visible) {
         [this](int idx) {
             const auto& presets = getProvingGroundPresets();
             if (idx >= 0 && idx < static_cast<int>(presets.size())) {
+                m_currentPresetIndex = idx;
                 m_physicsWorld->teleportToPreset(presets[static_cast<size_t>(idx)]);
                 for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
                 m_cameraController->snapToVehicle(*m_physicsWorld->vehicle);
             }
+        },
+        [this](int delta) {
+            const auto& presets = getProvingGroundPresets();
+            if (presets.empty()) return;
+            const int count = static_cast<int>(presets.size());
+            m_currentPresetIndex = (m_currentPresetIndex + delta + count) % count;
+            m_physicsWorld->teleportToPreset(presets[static_cast<size_t>(m_currentPresetIndex)]);
+            for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
+            m_cameraController->snapToVehicle(*m_physicsWorld->vehicle);
         },
         [this]() {
             const bool isBmw = (m_physicsWorld->vehicle->config.id == "bmw_m4");
@@ -256,9 +271,7 @@ bool Application::init(int width, int height, bool visible) {
     glfwSetCursorPosCallback(m_window, cursorPosCallback);
     glfwSetScrollCallback(m_window, scrollCallback);
     glfwSetFramebufferSizeCallback(m_window, framebufferSizeCallback);
-
-    // Warm up GLFW joystick enumeration during init so Frame 0 does not incur DirectInput init stall
-    (void)glfwJoystickIsGamepad(GLFW_JOYSTICK_1);
+    glfwSetJoystickCallback(joystickCallback);
 
     return true;
 }
@@ -353,7 +366,29 @@ int Application::run(int maxFrames) {
         m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, alpha);
         const VehicleTelemetrySnapshot snap = m_physicsWorld->vehicle->getTelemetrySnapshot();
         m_trackRenderer.updateSunTarget(snap.chassisPosition);
+
+        const auto lookStick = m_inputController->getCameraLookAround();
+        m_cameraController->setLookAroundStick(lookStick.x, lookStick.y);
         m_cameraController->update(*m_physicsWorld->vehicle, alpha, frameDt);
+
+        // Feed physics-driven events (collision impacts and suspension strikes) to controller haptics
+        if (snap.collisionImpact.occurred) {
+            m_inputController->triggerCollisionImpact(
+                snap.collisionImpact.impactSpeedMps,
+                snap.collisionImpact.normalImpulse,
+                snap.collisionImpact.lateralBias,
+                snap.collisionImpact.isChassisScrape
+            );
+        }
+
+        if (snap.suspensionImpact.occurred) {
+            m_inputController->triggerSuspensionImpact(
+                snap.suspensionImpact.severity,
+                snap.suspensionImpact.lateralBias,
+                snap.suspensionImpact.isHardLanding,
+                snap.suspensionImpact.isBottomOut
+            );
+        }
 
         if (maxFrames == 600 && frameCount == 0) {
             const auto colDiag = m_physicsWorld->getCollisionDiagnostics(m_debugOverlay.showCollisionWireframe);
@@ -390,6 +425,16 @@ int Application::run(int maxFrames) {
         renderFrame(alpha);
         const double t4 = glfwGetTime();
 
+        // Dynamically manage Dear ImGui gamepad navigation:
+        // When simulation is paused, controller navigates menus and settings.
+        // When driving unpaused, controller has 100% vehicle driving authority.
+        ImGuiIO& io = ImGui::GetIO();
+        if (m_physicsWorld->paused) {
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        } else {
+            io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+        }
+
         // Render Dear ImGui HUD
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -411,7 +456,8 @@ int Application::run(int maxFrames) {
             m_vehicleRenderer.hasImportedModel(),
             m_vehicleRenderer.getActiveModelName(),
             m_vehicleRenderer.isVisualDebugEnabled(),
-            m_debugOverlay.showCollisionWireframe
+            m_debugOverlay.showCollisionWireframe,
+            m_inputController.get()
         );
 
         ImGui::Render();
@@ -505,6 +551,9 @@ void Application::renderFrame(double /*alpha*/) {
 }
 
 void Application::shutdown() {
+    if (s_activeApp == this) {
+        s_activeApp = nullptr;
+    }
     if (m_imguiInitialized) {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
@@ -575,6 +624,12 @@ void Application::framebufferSizeCallback(GLFWwindow* window, int width, int hei
         app->m_cameraController->onResize(
             static_cast<float>(app->m_fbWidth) / static_cast<float>(app->m_fbHeight)
         );
+    }
+}
+
+void Application::joystickCallback(int jid, int event) {
+    if (s_activeApp && s_activeApp->m_inputController) {
+        s_activeApp->m_inputController->onJoystickEvent(jid, event);
     }
 }
 

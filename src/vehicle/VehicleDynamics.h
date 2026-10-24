@@ -49,6 +49,14 @@ struct DrivetrainTelemetry {
     bool revLimiterActive{false};
 };
 
+struct SuspensionHapticEvent {
+    bool occurred{false};
+    float severity{0.0f};          // [0.0 .. 1.0]
+    float lateralBias{0.0f};       // [-1.0 .. +1.0], +1 = Left, -1 = Right
+    bool isHardLanding{false};     // Airborne touchdown with downward mount speed
+    bool isBottomOut{false};       // Progressive bump-stop travel limit impact
+};
+
 struct VehicleTelemetrySnapshot {
     double simTime{0.0};
     Vec3 chassisPosition{0.0, 0.0, 0.0};
@@ -76,6 +84,8 @@ struct VehicleTelemetrySnapshot {
     Vec3 upDirWorld{0.0, 1.0, 0.0};
     Vec3 lateralDirWorld{1.0, 0.0, 0.0};
     int collisionContactCount{0};
+    CollisionImpactEvent collisionImpact{};
+    SuspensionHapticEvent suspensionImpact{};
     bool numericalSanityOk{true};
 };
 
@@ -136,6 +146,10 @@ private:
     Quat m_prevChassisRot{0.0, 0.0, 0.0, 1.0};
     std::array<Vec3, 4> m_prevWheelPos{};
     std::array<Quat, 4> m_prevWheelRot{};
+    std::array<bool, 4> m_prevWheelInContact{true, true, true, true};
+
+    mutable CollisionImpactEvent m_latchedCollision{};
+    mutable SuspensionHapticEvent m_latchedSuspension{};
 };
 
 } // namespace torquelab

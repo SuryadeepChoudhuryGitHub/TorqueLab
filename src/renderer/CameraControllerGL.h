@@ -28,6 +28,7 @@ public:
     void onResize(float aspect);
     void onMouseDrag(double dx, double dy);
     void onMouseScroll(double scrollDeltaY);
+    void setLookAroundStick(double stickX, double stickY);
 
     void update(const VehicleDynamics& vehicle, double alpha, double dtRender);
     void snapToVehicle(const VehicleDynamics& vehicle);
@@ -47,6 +48,11 @@ private:
     double m_orbitYaw{0.65};
     double m_orbitPitch{0.35};
     double m_orbitDistance{5.4};
+
+    double m_lookStickX{0.0};
+    double m_lookStickY{0.0};
+    double m_lookAngleYaw{0.0};
+    double m_lookAnglePitch{0.0};
 
     Vec3 m_position{0.0, 3.0, -7.0};
     Vec3 m_currentLookAt{0.0, 0.8, 0.0};

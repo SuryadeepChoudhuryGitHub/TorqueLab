@@ -16,6 +16,8 @@
 
 namespace torquelab {
 
+class InputControllerGLFW;
+
 struct DashboardCallbacks {
     std::function<void()> onReset;
     std::function<void()> onTogglePause;
@@ -58,7 +60,8 @@ public:
         bool hasImportedModel = true,
         const std::string& modelName = "BMW M4 Coupe",
         bool visualDebugEnabled = false,
-        bool collisionWireframeEnabled = true
+        bool collisionWireframeEnabled = true,
+        InputControllerGLFW* inputController = nullptr
     );
 
     void showValidationReport(const std::string& message, bool isSuccess = true);
@@ -92,8 +95,10 @@ private:
         bool hasImportedModel,
         const std::string& modelName,
         bool visualDebugEnabled,
-        bool collisionWireframeEnabled
+        bool collisionWireframeEnabled,
+        InputControllerGLFW* inputController
     );
+    void renderControllerSettings(InputControllerGLFW* inputController);
     void renderRightTelemetryPanel(
         const VehicleTelemetrySnapshot& snap,
         double fps,

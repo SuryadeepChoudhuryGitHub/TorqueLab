@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "input/ControllerConfig.h"
+#include "input/VibrationManager.h"
 #include "physics/CollisionMeshGeometry.h"
 #include "physics/Math3D.h"
 #include "physics/PhysicsWorld.h"
@@ -1054,6 +1056,230 @@ void unitTest12_CollisionLifecycleAndVisualizationIndependence() {
     EXPECT_TRUE(diagReplaced.childShapeCount == static_cast<int>(altCol.pieces.size()));
 }
 
+void unitTest13_ControllerMappingAndNormalization() {
+    // 1. Verify default Forza Horizon control bindings
+    ControllerSettings cfg{};
+    cfg.resetToForzaDefaults();
+
+    EXPECT_TRUE(cfg.axisThrottle == GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER);
+    EXPECT_TRUE(cfg.axisBrake == GLFW_GAMEPAD_AXIS_LEFT_TRIGGER);
+    EXPECT_TRUE(cfg.axisSteer == GLFW_GAMEPAD_AXIS_LEFT_X);
+    EXPECT_TRUE(cfg.axisLookX == GLFW_GAMEPAD_AXIS_RIGHT_X);
+    EXPECT_TRUE(cfg.axisLookY == GLFW_GAMEPAD_AXIS_RIGHT_Y);
+    EXPECT_TRUE(cfg.btnHandbrake == GLFW_GAMEPAD_BUTTON_A);
+    EXPECT_TRUE(cfg.btnShiftUp == GLFW_GAMEPAD_BUTTON_B);
+    EXPECT_TRUE(cfg.btnShiftDown == GLFW_GAMEPAD_BUTTON_X);
+    EXPECT_TRUE(cfg.btnReset == GLFW_GAMEPAD_BUTTON_Y);
+    EXPECT_TRUE(cfg.btnChangeCamera == GLFW_GAMEPAD_BUTTON_RIGHT_THUMB);
+    EXPECT_TRUE(cfg.btnPause == GLFW_GAMEPAD_BUTTON_START);
+    EXPECT_TRUE(cfg.btnToggleTransmission == GLFW_GAMEPAD_BUTTON_LEFT_BUMPER);
+    EXPECT_TRUE(cfg.btnToggleModel == GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER);
+
+    // 2. Verify controller flavor detection & label adaptivity
+    const ControllerFlavor psFlavor = detectControllerFlavorFromName("Sony Interactive Entertainment DualSense Wireless Controller");
+    EXPECT_TRUE(psFlavor == ControllerFlavor::PlayStation);
+    EXPECT_TRUE(getGamepadButtonName(GLFW_GAMEPAD_BUTTON_A, ControllerFlavor::PlayStation) == "Cross");
+    EXPECT_TRUE(getGamepadButtonName(GLFW_GAMEPAD_BUTTON_B, ControllerFlavor::PlayStation) == "Circle");
+    EXPECT_TRUE(getGamepadButtonName(GLFW_GAMEPAD_BUTTON_X, ControllerFlavor::PlayStation) == "Square");
+    EXPECT_TRUE(getGamepadButtonName(GLFW_GAMEPAD_BUTTON_Y, ControllerFlavor::PlayStation) == "Triangle");
+    EXPECT_TRUE(getGamepadAxisName(GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER, ControllerFlavor::PlayStation) == "R2 Trigger");
+    EXPECT_TRUE(getGamepadAxisName(GLFW_GAMEPAD_AXIS_LEFT_TRIGGER, ControllerFlavor::PlayStation) == "L2 Trigger");
+
+    const ControllerFlavor xbFlavor = detectControllerFlavorFromName("Xbox 360 Controller");
+    EXPECT_TRUE(xbFlavor == ControllerFlavor::Xbox);
+    EXPECT_TRUE(getGamepadButtonName(GLFW_GAMEPAD_BUTTON_A, ControllerFlavor::Xbox) == "A");
+    EXPECT_TRUE(getGamepadButtonName(GLFW_GAMEPAD_BUTTON_B, ControllerFlavor::Xbox) == "B");
+
+    // 3. Mathematical trigger normalization test
+    // Helper function reproducing the trigger normalization pipeline
+    auto normalizeTrigger = [](float raw, float baseline, float deadzone) -> double {
+        double val = 0.0;
+        if (baseline < -0.5f) {
+            val = (static_cast<double>(raw) + 1.0) * 0.5;
+        } else {
+            val = static_cast<double>(raw - baseline) / std::max(0.1, static_cast<double>(1.0f - baseline));
+        }
+        val = clamp(val, 0.0, 1.0);
+        const double dz = static_cast<double>(deadzone);
+        if (val <= dz) return 0.0;
+        return clamp((val - dz) / (1.0 - dz), 0.0, 1.0);
+    };
+
+    // Standard XInput trigger: rest=-1.0, mid=0.0, max=+1.0
+    EXPECT_NEAR(normalizeTrigger(-1.0f, -1.0f, 0.05f), 0.0, 1e-4);
+    EXPECT_NEAR(normalizeTrigger(-0.95f, -1.0f, 0.05f), 0.0, 1e-4); // Within deadzone
+    EXPECT_NEAR(normalizeTrigger(1.0f, -1.0f, 0.05f), 1.0, 1e-4);  // Full trigger
+    // Midpoint: (0.0 + 1.0) * 0.5 = 0.50 -> scaled past deadzone = (0.50 - 0.05) / 0.95 = 0.4737
+    EXPECT_NEAR(normalizeTrigger(0.0f, -1.0f, 0.05f), (0.5 - 0.05) / 0.95, 1e-4);
+
+    // Virtual HID device trigger resting at 0.0: rest=0.0, mid=0.5, max=1.0
+    EXPECT_NEAR(normalizeTrigger(0.0f, 0.0f, 0.05f), 0.0, 1e-4);
+    EXPECT_NEAR(normalizeTrigger(0.04f, 0.0f, 0.05f), 0.0, 1e-4); // Deadzone cutoff
+    EXPECT_NEAR(normalizeTrigger(1.0f, 0.0f, 0.05f), 1.0, 1e-4);  // Full trigger
+
+    // 4. Mathematical steering normalization test
+    auto normalizeSteer = [](float raw, float baseline, float deadzone, float sensitivity, bool invert) -> double {
+        const double delta = static_cast<double>(raw - baseline);
+        const double mag = std::abs(delta);
+        const double dz = static_cast<double>(deadzone);
+        if (mag <= dz) return 0.0;
+        double norm = clamp((mag - dz) / (1.0 - dz), 0.0, 1.0);
+        if (sensitivity != 1.0f && sensitivity > 0.1f) {
+            norm = std::pow(norm, static_cast<double>(sensitivity));
+        }
+        const double sign = (delta > 0.0) ? 1.0 : -1.0;
+        double steer = -sign * norm; // Left stick left (raw < 0) -> +1.0 left turn
+        if (invert) steer = -steer;
+        return clamp(steer, -1.0, 1.0);
+    };
+
+    EXPECT_NEAR(normalizeSteer(0.0f, 0.0f, 0.08f, 1.0f, false), 0.0, 1e-4);     // Center
+    EXPECT_NEAR(normalizeSteer(-0.05f, 0.0f, 0.08f, 1.0f, false), 0.0, 1e-4);    // Small noise inside deadzone
+    EXPECT_NEAR(normalizeSteer(-1.0f, 0.0f, 0.08f, 1.0f, false), +1.0, 1e-4);   // Full left deflection (+1.0)
+    EXPECT_NEAR(normalizeSteer(+1.0f, 0.0f, 0.08f, 1.0f, false), -1.0, 1e-4);   // Full right deflection (-1.0)
+    EXPECT_NEAR(normalizeSteer(-1.0f, 0.0f, 0.08f, 1.0f, true), -1.0, 1e-4);    // Inverted left turns right
+
+    // Progressive response (>1.0) softens center response
+    const double linearMid = normalizeSteer(-0.54f, 0.0f, 0.08f, 1.0f, false);
+    const double softMid = normalizeSteer(-0.54f, 0.0f, 0.08f, 1.6f, false);
+    EXPECT_TRUE(softMid < linearMid); // Progressive exponent creates finer control near center
+
+    // 5. Serialization and Roundtrip
+    ControllerSettings testSave{};
+    testSave.steerDeadzone = 0.125f;
+    testSave.triggerDeadzone = 0.075f;
+    testSave.invertSteering = true;
+    testSave.collisionSensitivity = 1.45f;
+    testSave.suspensionSensitivity = 0.85f;
+    testSave.btnHandbrake = GLFW_GAMEPAD_BUTTON_X;
+    EXPECT_TRUE(saveControllerSettingsToJson(testSave, "settings/test_controller_config.json"));
+
+    ControllerSettings testLoaded{};
+    EXPECT_TRUE(loadControllerSettingsFromJson(testLoaded, "settings/test_controller_config.json"));
+    EXPECT_NEAR(testLoaded.steerDeadzone, 0.125f, 1e-3);
+    EXPECT_NEAR(testLoaded.triggerDeadzone, 0.075f, 1e-3);
+    EXPECT_TRUE(testLoaded.invertSteering == true);
+    EXPECT_NEAR(testLoaded.collisionSensitivity, 1.45f, 1e-3);
+    EXPECT_NEAR(testLoaded.suspensionSensitivity, 0.85f, 1e-3);
+    EXPECT_TRUE(testLoaded.btnHandbrake == GLFW_GAMEPAD_BUTTON_X);
+}
+
+void unitTest14_PhysicsDrivenHapticsAndRpmElimination() {
+    // 1. High-RPM stationary revving produces strictly ZERO vibration
+    PhysicsWorld world(createDefaultVehicleConfig(), false, nullptr);
+    world.vehicle->drivetrain.transmissionMode = TransmissionMode::Manual;
+    world.vehicle->drivetrain.gearIndex = 1; // Neutral (free engine revving)
+    world.vehicle->currentInputs.throttle = 1.0;
+    world.vehicle->currentInputs.brake = 0.0;
+    world.vehicle->currentInputs.disableAutoReverse = true;
+
+    for (int step = 0; step < 180; ++step) {
+        world.stepFixed();
+    }
+
+    VehicleTelemetrySnapshot snap = world.vehicle->getTelemetrySnapshot();
+    EXPECT_TRUE(snap.speedMps < 0.2); // Fully stationary
+    EXPECT_TRUE(snap.drivetrain.rpm > 6500.0); // Engine at redline
+    EXPECT_TRUE(snap.drivetrain.revLimiterActive);
+    EXPECT_TRUE(snap.collisionImpact.occurred == false);
+    EXPECT_TRUE(snap.suspensionImpact.occurred == false);
+
+    VibrationManager vib;
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_NEAR(vib.getLiveLeftMotor(), 0.0f, 1e-4);
+    EXPECT_NEAR(vib.getLiveRightMotor(), 0.0f, 1e-4);
+
+    // 2. High-speed smooth driving produces strictly ZERO vibration
+    world.vehicle->resetVehicle();
+    world.vehicle->currentInputs.throttle = 1.0;
+    world.vehicle->currentInputs.brake = 0.0;
+    world.vehicle->currentInputs.disableAutoReverse = false;
+
+    for (int step = 0; step < 480; ++step) {
+        world.stepFixed();
+    }
+    snap = world.vehicle->getTelemetrySnapshot();
+    EXPECT_TRUE(snap.speedMps > 15.0); // High-speed driving > 54 km/h
+    EXPECT_TRUE(snap.collisionImpact.occurred == false);
+    EXPECT_TRUE(snap.suspensionImpact.occurred == false);
+
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_NEAR(vib.getLiveLeftMotor(), 0.0f, 1e-4);
+    EXPECT_NEAR(vib.getLiveRightMotor(), 0.0f, 1e-4);
+
+    // 3. Collision impact feedback scaling (Light vs Heavy)
+    vib.stop(0);
+    vib.triggerCollision(0.8f, 400.0f, 0.0f, false, 1.0f);
+    vib.update(0.016f, 0, true, 1.0f);
+    const float lightLeft = vib.getLiveLeftMotor();
+    const float lightRight = vib.getLiveRightMotor();
+    EXPECT_TRUE(lightLeft > 0.05f && lightLeft < 0.45f);
+    EXPECT_TRUE(lightRight > 0.05f && lightRight < 0.45f);
+    EXPECT_TRUE(vib.isCollisionPulseActive());
+
+    vib.stop(0);
+    vib.triggerCollision(7.0f, 9000.0f, 0.0f, false, 1.0f);
+    vib.update(0.016f, 0, true, 1.0f);
+    const float heavyLeft = vib.getLiveLeftMotor();
+    const float heavyRight = vib.getLiveRightMotor();
+    EXPECT_TRUE(heavyLeft > lightLeft * 1.8f);
+    EXPECT_TRUE(heavyRight > lightRight * 1.8f);
+    EXPECT_TRUE(heavyLeft <= 1.0f && heavyRight <= 1.0f);
+
+    // 4. Directional / Lateral impact motor balance
+    vib.stop(0);
+    vib.triggerCollision(4.0f, 4000.0f, +0.8f, false, 1.0f); // Left hit (+0.8)
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_TRUE(vib.getLiveLeftMotor() > vib.getLiveRightMotor() * 1.30f);
+
+    vib.stop(0);
+    vib.triggerCollision(4.0f, 4000.0f, -0.8f, false, 1.0f); // Right hit (-0.8)
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_TRUE(vib.getLiveRightMotor() > vib.getLiveLeftMotor() * 1.30f);
+
+    // 5. Suspension event types: Landing vs Bump Stop vs Curb Strike
+    vib.stop(0);
+    vib.triggerSuspension(0.85f, 0.0f, true, false, 1.0f); // Hard Landing
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_TRUE(vib.getLiveLeftMotor() > vib.getLiveRightMotor() * 1.40f); // Low freq dominates
+
+    vib.stop(0);
+    vib.triggerSuspension(0.90f, 0.0f, false, true, 1.0f); // Bump stop
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_TRUE(vib.getLiveLeftMotor() > 0.65f); // Solid mechanical jolt
+
+    vib.stop(0);
+    vib.triggerSuspension(0.60f, 0.0f, false, false, 1.0f); // Sharp curb strike
+    vib.update(0.016f, 0, true, 1.0f);
+    EXPECT_TRUE(vib.getLiveRightMotor() > vib.getLiveLeftMotor() * 1.50f); // High freq dominates
+
+    // 6. Settings toggle and sensitivity scaling
+    vib.stop(0);
+    vib.triggerCollision(6.0f, 6000.0f, 0.0f, false, 1.0f);
+    vib.update(0.016f, 0, false, 1.0f); // Disabled
+    EXPECT_NEAR(vib.getLiveLeftMotor(), 0.0f, 1e-4);
+    EXPECT_NEAR(vib.getLiveRightMotor(), 0.0f, 1e-4);
+
+    vib.stop(0);
+    vib.triggerCollision(5.0f, 5000.0f, 0.0f, false, 0.5f); // 0.5x sensitivity
+    vib.update(0.016f, 0, true, 1.0f);
+    const float halfSensL = vib.getLiveLeftMotor();
+
+    vib.stop(0);
+    vib.triggerCollision(5.0f, 5000.0f, 0.0f, false, 1.0f); // 1.0x sensitivity
+    vib.update(0.016f, 0, true, 1.0f);
+    const float fullSensL = vib.getLiveLeftMotor();
+    EXPECT_TRUE(halfSensL < fullSensL * 0.75f);
+
+    // 7. Deduplication & settling (bounded duration, smooth decay to 0)
+    for (int frame = 0; frame < 30; ++frame) {
+        vib.update(0.020f, 0, true, 1.0f);
+    }
+    EXPECT_NEAR(vib.getLiveLeftMotor(), 0.0f, 1e-4);
+    EXPECT_NEAR(vib.getLiveRightMotor(), 0.0f, 1e-4);
+    EXPECT_TRUE(!vib.isCollisionPulseActive());
+}
+
 } // namespace
 
 int main() {
@@ -1079,6 +1305,8 @@ int main() {
         {"Unit 10: Dynamic Rigid-Body Collision Hull Stability & Contact", unitTest10_ModelDerivedCollisionDynamics},
         {"Unit 11: Collision Alignment, Continuous Collision Detection & Obstacle Impact", unitTest11_CollisionAlignmentAndContinuousCollisionDetection},
         {"Unit 12: Collision Lifecycle, Visualization Independence & Switching Integrity", unitTest12_CollisionLifecycleAndVisualizationIndependence},
+        {"Unit 13: Forza-Inspired Controller Mapping, Normalization & Settings Pipeline", unitTest13_ControllerMappingAndNormalization},
+        {"Unit 14: Physics-Driven Controller Haptics & RPM Vibration Elimination", unitTest14_PhysicsDrivenHapticsAndRpmElimination},
         {"Test A: Static Equilibrium on Flat Ground", validationTestA_StaticEquilibrium},
         {"Test B: Acceleration & Longitudinal Load Transfer (Rear Squat)", validationTestB_AccelerationAndSquat},
         {"Test C: Service Braking, Front Dive & Progressive Deceleration", validationTestC_BrakingAndDive},

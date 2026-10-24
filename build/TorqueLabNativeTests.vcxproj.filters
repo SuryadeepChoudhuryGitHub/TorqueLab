@@ -4,6 +4,12 @@
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\tests\native_validation_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\ControllerConfig.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\VibrationManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\CMakeLists.txt" />

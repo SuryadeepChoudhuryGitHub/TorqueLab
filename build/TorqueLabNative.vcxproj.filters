@@ -34,6 +34,12 @@
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\renderer\CameraControllerGL.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\ControllerConfig.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\VibrationManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\input\InputControllerGLFW.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

@@ -85,9 +85,11 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 - [`src/renderer/DebugOverlayGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/DebugOverlayGL.h) & [`DebugOverlayGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/DebugOverlayGL.cpp): 3D force vector gizmos (normal load $F_z$, longitudinal $F_x$, lateral $F_y$, velocity vector, and CoM marker) + rear-wheel dynamic skidmarks.
 - [`src/renderer/CameraControllerGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/CameraControllerGL.h) & [`CameraControllerGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/CameraControllerGL.cpp): 4 camera modes (`Follow`, `Orbit`, `Suspension`, `Hood`).
 - [`src/ui/ImGuiDashboard.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/ui/ImGuiDashboard.h) & [`ImGuiDashboard.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/ui/ImGuiDashboard.cpp): Top bar (zone presets `1..7`, model toggle, camera/gizmo/telemetry toggles, physics verifier button), left live tuning panel (model switcher, alignment debug checkbox, 12 real-time sliders + drivetrain layout selector), right telemetry panel (force balance summary, 4-wheel table, 4-band real-time oscilloscope), and bottom instrument cluster (digital speedometer, RPM bar, pedal bars, G-G diagram).
-- [`src/input/InputControllerGLFW.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.h) & [`InputControllerGLFW.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.cpp): Progressive keyboard + baseline-calibrated gamepad input handler (including `B` key to toggle 3D model, `V` key to toggle alignment debug).
+- [`src/input/ControllerConfig.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/ControllerConfig.h) & [`ControllerConfig.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/ControllerConfig.cpp): Logical vehicle action enum, Forza Horizon default mappings, Xbox/PlayStation/Nintendo button glyph adaptivity, and persistent JSON configuration (`settings/controller_config.json`).
+- [`src/input/VibrationManager.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/VibrationManager.h) & [`VibrationManager.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/VibrationManager.cpp): Dynamic Windows XInput force-feedback rumble pipeline. Purely event-driven haptics inspired by Forza Horizon: collision impacts with non-linear impulse scaling & lateral directionality, suspension events (jump landings, bump-stop bottom-out, sharp curb strikes), underside chassis scrape buzzing, smooth cosine envelope decay, and collision deduplication. Zero vibration from engine RPM, throttle, or smooth cruising.
+- [`src/input/InputControllerGLFW.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.h) & [`InputControllerGLFW.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.cpp): Progressive keyboard + baseline-calibrated multi-gamepad input handler with continuous analog steering, trigger normalization, right-stick look-around, interactive rebinding, and hotplugging.
 - [`src/app/Application.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/Application.h), [`Application.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/Application.cpp), [`main.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/main.cpp): Lifecycle manager and CLI entry point (`--smoke-test`, `--diag`).
-- [`tests/native_validation_tests.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/tests/native_validation_tests.cpp): 21 automated test suites (`Unit 1–8`, `Validation Tests A–J`, `Controlled Tests 1–3`).
+- [`tests/native_validation_tests.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/tests/native_validation_tests.cpp): 27 automated test suites (`Unit 1–14`, `Validation Tests A–J`, `Controlled Tests 1–3`).
 
 ---
 
@@ -124,9 +126,19 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 
 ---
 
-## 6. Verified Physical Benchmarks (`24 / 24` Suites Passing)
+7. **Physics Event-Driven Controller Haptics (RPM Vibration Elimination):**
+   - Controller vibration is strictly event-driven. Engine RPM, engine pitch/audio, throttle application, wheelspin slip, and smooth cruising produce **strictly 0.0% vibration**.
+   - Haptics are triggered exclusively by:
+     - **Barrier/Obstacle Collisions:** Derived from rigid-body velocity jump $|\Delta \vec{v}|$, contact normal impulse $J$, and contact lifetime. Resting contact against a wall settles to 0.0% rumble after initial impact. Collision deduplication suppresses contact chatter.
+     - **Suspension Events:** Hard jump landings ($v_{\text{down}} > 0.6\text{ m/s}$, heavy motor), progressive bump-stop bottoming out ($w.\text{bumpStopForce} > 800\text{ N}$, heavy motor), sharp curb/bump strikes ($dL/dt < -2.2\text{ m/s}$, light motor), and underside chassis scrapes (light motor buzz).
+     - **Lateral Directionality:** Left-side impacts bias toward the left vibration motor; right-side impacts bias toward the right motor.
+     - **Decay & Controls:** Cosine envelope decay with master intensity, collision sensitivity, and suspension sensitivity sliders in ImGui and `settings/controller_config.json`.
 
-Any future code change must keep all 24 suites in `.\build\Release\TorqueLabNativeTests.exe` green:
+---
+
+## 6. Verified Physical Benchmarks (`27 / 27` Suites Passing)
+
+Any future code change must keep all 27 suites in `.\build\Release\TorqueLabNativeTests.exe` green:
 
 - **Static Equilibrium (`Test A`):** $\sum F_z = 14715.0\text{ N}$ ($0.000\%$ error vs $mg = 1500 \times 9.81 = 14715.0\text{ N}$), ride height $= 0.4910\text{ m}$, suspension compression $= 0.1093\text{ m}$.
 - **Full-Throttle Launch (`Test B` & `--diag`):**

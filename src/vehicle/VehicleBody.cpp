@@ -380,6 +380,10 @@ void VehicleBody::applyTorque(const Vec3& torqueWorld) {
     m_rigidBody->applyTorque(toBtVec3(torqueWorld));
 }
 
+void VehicleBody::prepareForSimulationStep() {
+    m_preStepLinearVelocity = getLinearVelocity();
+}
+
 void VehicleBody::postStepUpdate(btDiscreteDynamicsWorld* world, double dt) {
     const Vec3 vNow = getLinearVelocity();
     if (dt > 1e-5) {
@@ -389,13 +393,27 @@ void VehicleBody::postStepUpdate(btDiscreteDynamicsWorld* world, double dt) {
     }
     m_prevLinearVelocity = vNow;
 
+    lastImpactEvent = CollisionImpactEvent{};
     activeContacts.clear();
     if (!world || !world->getDispatcher()) {
         return;
     }
 
+    const Vec3 deltaV = vec3Sub(vNow, m_preStepLinearVelocity);
+    const double deltaVMag = vec3Length(deltaV);
+
     btDispatcher* dispatcher = world->getDispatcher();
     const int numManifolds = dispatcher->getNumManifolds();
+
+    double maxImpulse = 0.0;
+    int minLifeTime = 999999;
+    Vec3 worstContactPoint{0.0, 0.0, 0.0};
+    Vec3 worstContactNormal{0.0, 1.0, 0.0};
+    bool foundChassisContact = false;
+
+    const Vec3 chassisPos = getPosition();
+    const Quat chassisRot = getRotation();
+
     for (int i = 0; i < numManifolds; ++i) {
         btPersistentManifold* manifold = dispatcher->getManifoldByIndexInternal(i);
         if (!manifold) continue;
@@ -409,19 +427,66 @@ void VehicleBody::postStepUpdate(btDiscreteDynamicsWorld* world, double dt) {
         const int numContacts = manifold->getNumContacts();
         for (int p = 0; p < numContacts; ++p) {
             const btManifoldPoint& pt = manifold->getContactPoint(p);
-            if (pt.getDistance() <= 0.02f) {
+            if (pt.getDistance() <= 0.03f) {
                 const btVector3& wPt = (body0 == m_rigidBody.get())
                     ? pt.getPositionWorldOnA()
                     : pt.getPositionWorldOnB();
-                activeContacts.push_back(CollisionContactInfo{
-                    fromBtVec3(wPt),
-                    fromBtVec3(pt.m_normalWorldOnB)
-                });
-                if (activeContacts.size() >= 8) {
-                    return;
+                const Vec3 contactPt = fromBtVec3(wPt);
+                const Vec3 contactNorm = fromBtVec3(pt.m_normalWorldOnB);
+                const double appliedImpulse = static_cast<double>(pt.getAppliedImpulse());
+                const int lifeTime = pt.getLifeTime();
+
+                CollisionContactInfo cInfo;
+                cInfo.pointWorld = contactPt;
+                cInfo.normalWorld = contactNorm;
+                cInfo.appliedImpulse = appliedImpulse;
+                cInfo.distance = static_cast<double>(pt.getDistance());
+                cInfo.lifeTime = lifeTime;
+
+                if (activeContacts.size() < 16) {
+                    activeContacts.push_back(cInfo);
+                }
+
+                foundChassisContact = true;
+                if (appliedImpulse > maxImpulse || (maxImpulse == 0.0 && lifeTime < minLifeTime)) {
+                    maxImpulse = std::max(maxImpulse, appliedImpulse);
+                    minLifeTime = std::min(minLifeTime, lifeTime);
+                    worstContactPoint = contactPt;
+                    worstContactNormal = contactNorm;
                 }
             }
         }
+    }
+
+    if (!foundChassisContact) {
+        return;
+    }
+
+    const Vec3 ptLocal = worldPointToLocal(worstContactPoint, chassisPos, chassisRot);
+    const float lateralBias = static_cast<float>(clamp(ptLocal.x / 0.79, -1.0, 1.0));
+    const double vehicleSpeed = vec3Length(vNow);
+
+    // Chassis underside scrape: contact point near or below bottom ground clearance, upward normal, moving car
+    const bool isScrape = (ptLocal.y <= 0.22 && worstContactNormal.y > 0.45 && vehicleSpeed > 1.2);
+
+    // True collision impact requires either a sudden velocity jump or a substantial normal impulse on a fresh contact
+    const bool isRestingContact = (minLifeTime > 6 && deltaVMag < 0.22);
+
+    if (!isRestingContact) {
+        if (deltaVMag > 0.35 || maxImpulse > 250.0 || (isScrape && minLifeTime <= 3)) {
+            lastImpactEvent.occurred = true;
+            lastImpactEvent.impactSpeedMps = static_cast<float>(deltaVMag);
+            lastImpactEvent.normalImpulse = static_cast<float>(maxImpulse);
+            lastImpactEvent.lateralBias = lateralBias;
+            lastImpactEvent.isChassisScrape = isScrape;
+        }
+    } else if (isScrape && vehicleSpeed > 1.5) {
+        // Continuous sliding scrape over a low obstacle or curb while in motion
+        lastImpactEvent.occurred = true;
+        lastImpactEvent.impactSpeedMps = 0.0f;
+        lastImpactEvent.normalImpulse = static_cast<float>(maxImpulse);
+        lastImpactEvent.lateralBias = lateralBias;
+        lastImpactEvent.isChassisScrape = true;
     }
 }
 
@@ -446,9 +511,11 @@ void VehicleBody::resetPose(const Vec3& position, const Quat& rotation) {
     }
 
     m_prevLinearVelocity = Vec3{0.0, 0.0, 0.0};
+    m_preStepLinearVelocity = Vec3{0.0, 0.0, 0.0};
     accelerationWorld = Vec3{0.0, 0.0, 0.0};
     accelerationLocal = Vec3{0.0, 0.0, 0.0};
     activeContacts.clear();
+    lastImpactEvent = CollisionImpactEvent{};
 }
 
 bool VehicleBody::replaceCollisionShape(
