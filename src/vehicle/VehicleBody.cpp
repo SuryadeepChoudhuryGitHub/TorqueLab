@@ -1,4 +1,5 @@
 #include "vehicle/VehicleBody.h"
+#include "physics/VehicleCollisionGenerator.h"
 #include <algorithm>
 #include <cmath>
 
@@ -40,43 +41,168 @@ inline Quat fromBtQuat(const btQuaternion& q) {
     });
 }
 
+std::unique_ptr<btCompoundShape> buildCompoundShapeForVehicle(
+    const VehicleConfig& config,
+    const Vec3& localCom,
+    const GeneratedVehicleCollision* generatedCollision,
+    GeneratedVehicleCollision& outCollision,
+    std::vector<std::unique_ptr<btCollisionShape>>& outSubShapes
+) {
+    auto compoundShape = std::make_unique<btCompoundShape>();
+    outSubShapes.clear();
+
+    if (generatedCollision && !generatedCollision->pieces.empty()) {
+        outCollision = *generatedCollision;
+        compoundShape = VehicleCollisionGenerator::createBulletCompoundShape(
+            outCollision,
+            localCom,
+            outSubShapes
+        );
+    } else {
+        outCollision = GeneratedVehicleCollision{};
+        const double hx = config.chassisHalfExtents.x;
+        const double hy = config.chassisHalfExtents.y;
+        const double hz = config.chassisHalfExtents.z;
+
+        if (config.collisionShapeType == CollisionShapeType::TaperedCompound) {
+            // 1. Central Passenger Tub Box (Z in [-0.40 * hz, +0.40 * hz])
+            auto midBox = std::make_unique<btBoxShape>(btVector3(
+                static_cast<btScalar>(hx),
+                static_cast<btScalar>(hy * 0.55),
+                static_cast<btScalar>(hz * 0.40)
+            ));
+            btTransform midTrans;
+            midTrans.setIdentity();
+            midTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.24, 0.0}, localCom)));
+            compoundShape->addChildShape(midTrans, midBox.get());
+            outSubShapes.push_back(std::move(midBox));
+
+            // 2. Tapered Front Nose & Curved Bumper Hull (Z in [+0.40 * hz, +hz])
+            auto frontNose = std::make_unique<btConvexHullShape>();
+            const double frontHalfZ = hz * 0.30;
+            const double taperFrac = std::clamp(config.noseTaperWidthFraction, 0.60, 0.95);
+            const double wJunction = hx * 0.95;
+            const double wTip = hx * taperFrac;
+            const double hJunction = hy * 0.55;
+            const double hTip = hy * 0.50;
+
+            // Junction vertices (z = -frontHalfZ in nose local space)
+            frontNose->addPoint(btVector3( static_cast<btScalar>(wJunction),  static_cast<btScalar>(hJunction), static_cast<btScalar>(-frontHalfZ)));
+            frontNose->addPoint(btVector3(-static_cast<btScalar>(wJunction),  static_cast<btScalar>(hJunction), static_cast<btScalar>(-frontHalfZ)));
+            frontNose->addPoint(btVector3( static_cast<btScalar>(wJunction), -static_cast<btScalar>(hJunction), static_cast<btScalar>(-frontHalfZ)));
+            frontNose->addPoint(btVector3(-static_cast<btScalar>(wJunction), -static_cast<btScalar>(hJunction), static_cast<btScalar>(-frontHalfZ)));
+
+            // Front bumper corners (z = +frontHalfZ)
+            frontNose->addPoint(btVector3( static_cast<btScalar>(wTip),  static_cast<btScalar>(hTip), static_cast<btScalar>(frontHalfZ)));
+            frontNose->addPoint(btVector3(-static_cast<btScalar>(wTip),  static_cast<btScalar>(hTip), static_cast<btScalar>(frontHalfZ)));
+            frontNose->addPoint(btVector3( static_cast<btScalar>(wTip), -static_cast<btScalar>(hTip), static_cast<btScalar>(frontHalfZ)));
+            frontNose->addPoint(btVector3(-static_cast<btScalar>(wTip), -static_cast<btScalar>(hTip), static_cast<btScalar>(frontHalfZ)));
+
+            // Front center apex curve (eliminates flat front corners)
+            frontNose->addPoint(btVector3(0.0f,  static_cast<btScalar>(hTip), static_cast<btScalar>(frontHalfZ + 0.05)));
+            frontNose->addPoint(btVector3(0.0f, -static_cast<btScalar>(hTip), static_cast<btScalar>(frontHalfZ + 0.05)));
+
+            frontNose->recalcLocalAabb();
+            frontNose->setMargin(static_cast<btScalar>(0.04));
+
+            btTransform frontTrans;
+            frontTrans.setIdentity();
+            frontTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.22, hz * 0.70}, localCom)));
+            compoundShape->addChildShape(frontTrans, frontNose.get());
+            outSubShapes.push_back(std::move(frontNose));
+
+            // 3. Tapered Rear Bumper Hull (Z in [-hz, -0.40 * hz])
+            auto rearBumper = std::make_unique<btConvexHullShape>();
+            const double rearHalfZ = hz * 0.30;
+            const double rearTaperFrac = std::clamp(config.rearTaperWidthFraction, 0.65, 0.98);
+            const double wRearTip = hx * rearTaperFrac;
+            const double hRearTip = hy * 0.52;
+
+            // Junction vertices (z = +rearHalfZ in rear local space)
+            rearBumper->addPoint(btVector3( static_cast<btScalar>(wJunction),  static_cast<btScalar>(hJunction), static_cast<btScalar>(rearHalfZ)));
+            rearBumper->addPoint(btVector3(-static_cast<btScalar>(wJunction),  static_cast<btScalar>(hJunction), static_cast<btScalar>(rearHalfZ)));
+            rearBumper->addPoint(btVector3( static_cast<btScalar>(wJunction), -static_cast<btScalar>(hJunction), static_cast<btScalar>(rearHalfZ)));
+            rearBumper->addPoint(btVector3(-static_cast<btScalar>(wJunction), -static_cast<btScalar>(hJunction), static_cast<btScalar>(rearHalfZ)));
+
+            // Rear bumper corners (z = -rearHalfZ)
+            rearBumper->addPoint(btVector3( static_cast<btScalar>(wRearTip),  static_cast<btScalar>(hRearTip), static_cast<btScalar>(-rearHalfZ)));
+            rearBumper->addPoint(btVector3(-static_cast<btScalar>(wRearTip),  static_cast<btScalar>(hRearTip), static_cast<btScalar>(-rearHalfZ)));
+            rearBumper->addPoint(btVector3( static_cast<btScalar>(wRearTip), -static_cast<btScalar>(hRearTip), static_cast<btScalar>(-rearHalfZ)));
+            rearBumper->addPoint(btVector3(-static_cast<btScalar>(wRearTip), -static_cast<btScalar>(hRearTip), static_cast<btScalar>(-rearHalfZ)));
+
+            // Rear center apex curve
+            rearBumper->addPoint(btVector3(0.0f,  static_cast<btScalar>(hRearTip), static_cast<btScalar>(-rearHalfZ - 0.04)));
+            rearBumper->addPoint(btVector3(0.0f, -static_cast<btScalar>(hRearTip), static_cast<btScalar>(-rearHalfZ - 0.04)));
+
+            rearBumper->recalcLocalAabb();
+            rearBumper->setMargin(static_cast<btScalar>(0.04));
+
+            btTransform rearTrans;
+            rearTrans.setIdentity();
+            rearTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.23, -hz * 0.70}, localCom)));
+            compoundShape->addChildShape(rearTrans, rearBumper.get());
+            outSubShapes.push_back(std::move(rearBumper));
+
+            // 4. Cabin Greenhouse Box
+            auto cabinBox = std::make_unique<btBoxShape>(btVector3(
+                static_cast<btScalar>(hx * 0.80),
+                static_cast<btScalar>(hy * 0.55),
+                static_cast<btScalar>(hz * 0.48)
+            ));
+            btTransform cabinTrans;
+            cabinTrans.setIdentity();
+            cabinTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.62, -0.15}, localCom)));
+            compoundShape->addChildShape(cabinTrans, cabinBox.get());
+            outSubShapes.push_back(std::move(cabinBox));
+
+        } else {
+            // Standard 2-box collision configuration
+            auto lowerBox = std::make_unique<btBoxShape>(btVector3(
+                static_cast<btScalar>(hx),
+                static_cast<btScalar>(hy * 0.55),
+                static_cast<btScalar>(hz)
+            ));
+            btTransform lowerLocalTrans;
+            lowerLocalTrans.setIdentity();
+            lowerLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.24, 0.0}, localCom)));
+            compoundShape->addChildShape(lowerLocalTrans, lowerBox.get());
+            outSubShapes.push_back(std::move(lowerBox));
+
+            auto cabinBox = std::make_unique<btBoxShape>(btVector3(
+                static_cast<btScalar>(hx * 0.84),
+                static_cast<btScalar>(hy * 0.55),
+                static_cast<btScalar>(hz * 0.48)
+            ));
+            btTransform cabinLocalTrans;
+            cabinLocalTrans.setIdentity();
+            cabinLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.62, -0.15}, localCom)));
+            compoundShape->addChildShape(cabinLocalTrans, cabinBox.get());
+            outSubShapes.push_back(std::move(cabinBox));
+        }
+    }
+
+    return compoundShape;
+}
+
 } // namespace
 
 VehicleBody::VehicleBody(
     btDiscreteDynamicsWorld* world,
     const VehicleConfig& config,
     const Vec3& initialPosition,
-    const Quat& initialRotation
+    const Quat& initialRotation,
+    const GeneratedVehicleCollision* generatedCollision
 )
     : m_world(world)
     , m_localCom(getCenterOfMassLocal(config))
 {
-    const double hx = config.chassisHalfExtents.x;
-    const double hy = config.chassisHalfExtents.y;
-    const double hz = config.chassisHalfExtents.z;
-
-    m_lowerBoxShape = std::make_unique<btBoxShape>(btVector3(
-        static_cast<btScalar>(hx),
-        static_cast<btScalar>(hy * 0.55),
-        static_cast<btScalar>(hz)
-    ));
-    m_cabinBoxShape = std::make_unique<btBoxShape>(btVector3(
-        static_cast<btScalar>(hx * 0.84),
-        static_cast<btScalar>(hy * 0.55),
-        static_cast<btScalar>(hz * 0.48)
-    ));
-
-    m_compoundShape = std::make_unique<btCompoundShape>();
-
-    btTransform lowerLocalTrans;
-    lowerLocalTrans.setIdentity();
-    lowerLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.24, 0.0}, m_localCom)));
-    m_compoundShape->addChildShape(lowerLocalTrans, m_lowerBoxShape.get());
-
-    btTransform cabinLocalTrans;
-    cabinLocalTrans.setIdentity();
-    cabinLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.62, -0.15}, m_localCom)));
-    m_compoundShape->addChildShape(cabinLocalTrans, m_cabinBoxShape.get());
+    m_compoundShape = buildCompoundShapeForVehicle(
+        config,
+        m_localCom,
+        generatedCollision,
+        m_collision,
+        m_subShapes
+    );
 
     const Vec3 initialComWorld = localPointToWorld(m_localCom, initialPosition, initialRotation);
     btTransform startTransform;
@@ -99,14 +225,20 @@ VehicleBody::VehicleBody(
         m_compoundShape.get(),
         localInertia
     );
-    rbInfo.m_friction = static_cast<btScalar>(0.35);
-    rbInfo.m_restitution = static_cast<btScalar>(0.18);
+    rbInfo.m_friction = static_cast<btScalar>(0.50);
+    rbInfo.m_restitution = static_cast<btScalar>(0.02); // Controlled inelastic impact
     rbInfo.m_linearDamping = static_cast<btScalar>(0.0);
-    rbInfo.m_angularDamping = static_cast<btScalar>(0.015);
+    rbInfo.m_angularDamping = static_cast<btScalar>(0.05);
 
     m_rigidBody = std::make_unique<btRigidBody>(rbInfo);
     m_rigidBody->setActivationState(DISABLE_DEACTIVATION);
     m_rigidBody->setUserIndex(-1); // Identify vehicle chassis body
+
+    // Continuous Collision Detection (CCD) prevents obstacle tunneling at high velocities
+    m_rigidBody->setCcdMotionThreshold(static_cast<btScalar>(0.08)); // Trigger swept test when moving > 8 cm per step
+    m_rigidBody->setCcdSweptSphereRadius(static_cast<btScalar>(0.20)); // Swept sphere radius
+    m_rigidBody->setContactProcessingThreshold(static_cast<btScalar>(0.01)); // Clean contact threshold prevents edge snagging
+    m_rigidBody->setRestitution(0.0f);
 
     if (m_world) {
         m_world->addRigidBody(m_rigidBody.get());
@@ -126,15 +258,39 @@ void VehicleBody::syncMassProperties(const VehicleConfig& config) {
     m_localCom = getCenterOfMassLocal(config);
 
     // Update child shape offsets relative to new CoM
-    btTransform lowerLocalTrans;
-    lowerLocalTrans.setIdentity();
-    lowerLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.24, 0.0}, m_localCom)));
-    m_compoundShape->updateChildTransform(0, lowerLocalTrans, true);
+    if (!m_collision.pieces.empty() && m_compoundShape->getNumChildShapes() == static_cast<int>(m_collision.pieces.size())) {
+        for (size_t i = 0; i < m_collision.pieces.size(); ++i) {
+            btTransform childTrans;
+            childTrans.setIdentity();
+            childTrans.setOrigin(toBtVec3(vec3Sub(m_collision.pieces[i].centerModelSpace, m_localCom)));
+            m_compoundShape->updateChildTransform(static_cast<int>(i), childTrans, (i + 1 == m_collision.pieces.size()));
+        }
+    } else if (m_compoundShape->getNumChildShapes() >= 4) {
+        const double hz = config.chassisHalfExtents.z;
+        btTransform midTrans; midTrans.setIdentity();
+        midTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.24, 0.0}, m_localCom)));
+        m_compoundShape->updateChildTransform(0, midTrans, false);
 
-    btTransform cabinLocalTrans;
-    cabinLocalTrans.setIdentity();
-    cabinLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.62, -0.15}, m_localCom)));
-    m_compoundShape->updateChildTransform(1, cabinLocalTrans, true);
+        btTransform frontTrans; frontTrans.setIdentity();
+        frontTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.22, hz * 0.70}, m_localCom)));
+        m_compoundShape->updateChildTransform(1, frontTrans, false);
+
+        btTransform rearTrans; rearTrans.setIdentity();
+        rearTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.23, -hz * 0.70}, m_localCom)));
+        m_compoundShape->updateChildTransform(2, rearTrans, false);
+
+        btTransform cabinTrans; cabinTrans.setIdentity();
+        cabinTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.62, -0.15}, m_localCom)));
+        m_compoundShape->updateChildTransform(3, cabinTrans, true);
+    } else if (m_compoundShape->getNumChildShapes() >= 2) {
+        btTransform lowerLocalTrans; lowerLocalTrans.setIdentity();
+        lowerLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.24, 0.0}, m_localCom)));
+        m_compoundShape->updateChildTransform(0, lowerLocalTrans, false);
+
+        btTransform cabinLocalTrans; cabinLocalTrans.setIdentity();
+        cabinLocalTrans.setOrigin(toBtVec3(vec3Sub(Vec3{0.0, 0.62, -0.15}, m_localCom)));
+        m_compoundShape->updateChildTransform(1, cabinLocalTrans, true);
+    }
 
     // Reposition Bullet CoM transform so geometric chassis origin does not jump
     const Vec3 newComWorld = localPointToWorld(m_localCom, currentOriginPos, currentRot);
@@ -293,6 +449,49 @@ void VehicleBody::resetPose(const Vec3& position, const Quat& rotation) {
     accelerationWorld = Vec3{0.0, 0.0, 0.0};
     accelerationLocal = Vec3{0.0, 0.0, 0.0};
     activeContacts.clear();
+}
+
+bool VehicleBody::replaceCollisionShape(
+    const GeneratedVehicleCollision* newCollision,
+    const VehicleConfig& config
+) {
+    if (!m_world || !m_rigidBody) {
+        return false;
+    }
+
+    // 1. Temporarily remove rigid body from world to update broadphase cleanly
+    m_world->removeRigidBody(m_rigidBody.get());
+
+    // 2. Recompute local Center of Mass
+    m_localCom = getCenterOfMassLocal(config);
+
+    // 3. Rebuild compound shape and child hulls
+    m_compoundShape = buildCompoundShapeForVehicle(
+        config,
+        m_localCom,
+        newCollision,
+        m_collision,
+        m_subShapes
+    );
+
+    // 4. Update rigid body collision shape
+    m_rigidBody->setCollisionShape(m_compoundShape.get());
+
+    // 5. Update inertia tensor
+    const double massScale = config.mass / 1500.0;
+    const btVector3 localInertia(
+        static_cast<btScalar>(config.inertiaTensor.x * massScale),
+        static_cast<btScalar>(config.inertiaTensor.y * massScale),
+        static_cast<btScalar>(config.inertiaTensor.z * massScale)
+    );
+    m_rigidBody->setMassProps(static_cast<btScalar>(config.mass), localInertia);
+    m_rigidBody->updateInertiaTensor();
+
+    // 6. Re-add rigid body to Bullet world and update broadphase AABB
+    m_world->addRigidBody(m_rigidBody.get());
+    m_world->updateSingleAabb(m_rigidBody.get());
+
+    return true;
 }
 
 } // namespace torquelab

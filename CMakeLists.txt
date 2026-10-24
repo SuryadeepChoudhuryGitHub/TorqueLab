@@ -97,6 +97,23 @@ target_include_directories(glad PUBLIC
     third_party/glad/include
 )
 
+# -----------------------------------------------------------------------------
+# 4b. Volumetric Hierarchical Approximate Convex Decomposition (V-HACD)
+# -----------------------------------------------------------------------------
+add_library(vhacd_lib STATIC
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/src/VHACD.cpp
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/src/vhacdICHull.cpp
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/src/vhacdManifoldMesh.cpp
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/src/vhacdMesh.cpp
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/src/vhacdVolume.cpp
+)
+target_include_directories(vhacd_lib PUBLIC
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/public
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/inc
+    ${bullet3_SOURCE_DIR}/src
+)
+target_link_libraries(vhacd_lib PUBLIC LinearMath)
+
 find_package(OpenGL REQUIRED)
 
 # -----------------------------------------------------------------------------
@@ -105,6 +122,8 @@ find_package(OpenGL REQUIRED)
 add_library(TorqueLabPhysics STATIC
     src/physics/SurfaceSystem.cpp
     src/physics/PhysicsWorld.cpp
+    src/physics/VehicleCollisionGenerator.cpp
+    src/vehicle/VehicleConfig.cpp
     src/vehicle/SuspensionSystem.cpp
     src/vehicle/TireModel.cpp
     src/vehicle/SteeringSystem.cpp
@@ -117,13 +136,16 @@ add_library(TorqueLabPhysics STATIC
 
 target_include_directories(TorqueLabPhysics PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glad/include
     ${bullet3_SOURCE_DIR}/src
+    ${bullet3_SOURCE_DIR}/Extras/VHACD/public
 )
 
 target_link_libraries(TorqueLabPhysics PUBLIC
     BulletDynamics
     BulletCollision
     LinearMath
+    vhacd_lib
 )
 
 # -----------------------------------------------------------------------------

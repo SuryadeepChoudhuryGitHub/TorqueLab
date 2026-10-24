@@ -45,7 +45,8 @@ AnalyticalRayHit castRayExactWorld(
     const Vec3& rayOriginWorld,
     const Vec3& rayDirWorld,
     double maxRayLength,
-    const btCollisionObject* ignoreObj
+    const btCollisionObject* ignoreObj,
+    const SurfaceSystem* surfaceSystem = nullptr
 ) {
     AnalyticalRayHit best{};
     best.distance = maxRayLength + 1.0;
@@ -59,6 +60,9 @@ AnalyticalRayHit castRayExactWorld(
         const btCollisionObject* obj = objects[i];
         if (!obj || obj == ignoreObj) {
             continue;
+        }
+        if (surfaceSystem && !surfaceSystem->isColliderDriveable(obj->getUserIndex())) {
+            continue; // Skip obstacles/walls: suspension rays pass through to the ground plane beneath
         }
         const btCollisionShape* shape = obj->getCollisionShape();
         if (!shape) {
@@ -189,10 +193,11 @@ VehicleDynamics::VehicleDynamics(
     SurfaceSystem* surfaceSystem,
     const VehicleConfig& initialConfig,
     const Vec3& spawnPosition,
-    const Quat& spawnRotation
+    const Quat& spawnRotation,
+    const GeneratedVehicleCollision* collision
 )
     : config(initialConfig)
-    , body(world, config, spawnPosition, spawnRotation)
+    , body(world, config, spawnPosition, spawnRotation, collision)
     , drivetrain(createInitialDrivetrainState(config.idleRpm))
     , m_world(world)
     , m_surfaceSystem(surfaceSystem)
@@ -286,13 +291,20 @@ void VehicleDynamics::step(double dt) {
         const Vec3 mountVelWorld = body.getVelocityAtWorldPoint(w.mountPointWorld);
 
         const Vec3 rayOrigin = vec3Add(w.mountPointWorld, vec3Scale(basis.up, rayStartOffset));
-        const AnalyticalRayHit hit = castRayExactWorld(
+        AnalyticalRayHit hit = castRayExactWorld(
             m_world,
             rayOrigin,
             chassisDown,
             maxRayLength,
-            body.getRigidBody()
+            body.getRigidBody(),
+            m_surfaceSystem
         );
+
+        if (hit.hit && hit.normalWorld.y < 0.35) {
+            // A surface with steep vertical slope (normal.y < 0.35) is a wall or obstacle barrier, not a driveable road!
+            // Vehicle body collision is handled by Bullet's compound shape.
+            hit.hit = false;
+        }
 
         if (hit.hit) {
             const double distFromMount = std::max(0.02, hit.distance - rayStartOffset);
@@ -406,13 +418,11 @@ void VehicleDynamics::step(double dt) {
             const double rawNormalForce =
                 w.springForce + w.damperForce + w.bumpStopForce + w.antiRollForce;
             const double normalAlignment = clamp(vec3Dot(w.contactNormalWorld, basis.up), 0.25, 1.0);
-            w.normalLoad = std::max(0.0, rawNormalForce * normalAlignment);
+            const double maxNormalLoad = config.mass * GRAVITY * 3.5; // Structural physical load ceiling (~51 kN)
+            w.normalLoad = clamp(rawNormalForce * normalAlignment, 0.0, maxNormalLoad);
 
             if (w.normalLoad > 0.0) {
-                const Vec3 blendedDir = vec3Normalize(
-                    vec3Scale(vec3Add(basis.up, w.contactNormalWorld), 0.5)
-                );
-                const Vec3 suspForceWorld = vec3Scale(blendedDir, w.normalLoad);
+                const Vec3 suspForceWorld = vec3Scale(basis.up, w.normalLoad);
                 body.applyForceAtWorldPoint(suspForceWorld, w.mountPointWorld);
             }
         } else {

@@ -242,6 +242,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <Project>{BB26C950-70B2-3949-B4C0-FE12F82CD387}</Project>
       <Name>imgui_lib</Name>
     </ProjectReference>
+    <ProjectReference Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\build\vhacd_lib.vcxproj">
+      <Project>{A2811217-E481-3D01-97AF-E56009A41133}</Project>
+      <Name>vhacd_lib</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

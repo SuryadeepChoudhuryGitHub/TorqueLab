@@ -59,7 +59,7 @@ const std::vector<SpawnPreset>& getProvingGroundPresets() {
     return presets;
 }
 
-PhysicsWorld::PhysicsWorld(const VehicleConfig& config, bool buildDefaultTrack) {
+PhysicsWorld::PhysicsWorld(const VehicleConfig& config, bool buildDefaultTrack, const GeneratedVehicleCollision* collision) {
     m_collisionConfig = std::make_unique<btDefaultCollisionConfiguration>();
     m_dispatcher = std::make_unique<btCollisionDispatcher>(m_collisionConfig.get());
     m_broadphase = std::make_unique<btDbvtBroadphase>();
@@ -71,6 +71,15 @@ PhysicsWorld::PhysicsWorld(const VehicleConfig& config, bool buildDefaultTrack) 
         m_collisionConfig.get()
     );
     m_world->setGravity(btVector3(0.0f, static_cast<btScalar>(-GRAVITY), 0.0f));
+
+    // Configure constraint solver for stable vehicle dynamics:
+    btContactSolverInfo& solverInfo = m_world->getSolverInfo();
+    solverInfo.m_numIterations = 20; // 20 constraint iterations for robust contact convergence
+    solverInfo.m_erp = 0.2f;
+    solverInfo.m_globalCfm = 0.0f; // Rigid contact prevents obstacle spongy penetration
+    solverInfo.m_splitImpulse = 1; // Pure positional penetration resolution without velocity injection
+    solverInfo.m_splitImpulsePenetrationThreshold = -0.01f;
+    solverInfo.m_splitImpulseTurnErp = 0.1f;
 
     if (buildDefaultTrack) {
         buildProvingGround();
@@ -84,7 +93,8 @@ PhysicsWorld::PhysicsWorld(const VehicleConfig& config, bool buildDefaultTrack) 
         &surfaceSystem,
         config,
         Vec3{0.0, eqHeight, 0.0},
-        quatIdentity()
+        quatIdentity(),
+        collision
     );
 }
 
@@ -353,7 +363,7 @@ int PhysicsWorld::addTrackBox(const TrackBoxElement& element) {
     auto motionState = std::make_unique<btDefaultMotionState>(trans);
     btRigidBody::btRigidBodyConstructionInfo rbInfo(0.0f, motionState.get(), shape.get(), btVector3(0, 0, 0));
     rbInfo.m_friction = static_cast<btScalar>(0.8);
-    rbInfo.m_restitution = static_cast<btScalar>((element.kind == TrackElementKind::Obstacle) ? 0.25 : 0.05);
+    rbInfo.m_restitution = static_cast<btScalar>((element.kind == TrackElementKind::Obstacle) ? 0.02 : 0.0);
 
     auto body = std::make_unique<btRigidBody>(rbInfo);
     body->setUserIndex(handle);
@@ -362,7 +372,7 @@ int PhysicsWorld::addTrackBox(const TrackBoxElement& element) {
         m_world->addRigidBody(body.get());
     }
 
-    surfaceSystem.registerColliderSurface(handle, element.surfaceType);
+    surfaceSystem.registerColliderSurface(handle, element.surfaceType, element.kind != TrackElementKind::Obstacle);
 
     TrackBoxElement stored = element;
     stored.colliderHandle = handle;
@@ -424,6 +434,92 @@ void PhysicsWorld::teleportToPreset(const SpawnPreset& preset) {
     const Vec3 spawnPos{preset.position.x, eqHeight + 0.04, preset.position.z};
     vehicle->resetVehicle(&spawnPos, &rot);
     accumulator = 0.0;
+}
+
+void PhysicsWorld::switchVehicle(const VehicleConfig& newConfig, const GeneratedVehicleCollision* collision) {
+    Vec3 curPos{0.0, 0.55, 0.0};
+    Quat curRot = quatIdentity();
+    Vec3 curLinVel{0.0, 0.0, 0.0};
+    Vec3 curAngVel{0.0, 0.0, 0.0};
+
+    if (vehicle) {
+        curPos = vehicle->body.getPosition();
+        curRot = vehicle->body.getRotation();
+        curLinVel = vehicle->body.getLinearVelocity();
+        curAngVel = vehicle->body.getAngularVelocity();
+    }
+
+    const double eqHeight = computeEquilibriumChassisHeight(newConfig);
+    curPos.y = std::max(curPos.y, eqHeight);
+
+    // Cleanly delete previous vehicle (removes btRigidBody from dynamics world)
+    vehicle.reset();
+
+    // Construct new vehicle with updated geometry, mass, suspension, and collision shapes
+    vehicle = std::make_unique<VehicleDynamics>(
+        m_world.get(),
+        &surfaceSystem,
+        newConfig,
+        curPos,
+        curRot,
+        collision
+    );
+
+    vehicle->body.setLinearVelocity(curLinVel);
+    vehicle->body.setAngularVelocity(curAngVel);
+}
+
+VehicleCollisionDiagnostics PhysicsWorld::getCollisionDiagnostics(bool wireframeVisible) const {
+    VehicleCollisionDiagnostics diag{};
+    diag.collisionWireframeVisible = wireframeVisible;
+
+    if (!m_world) return diag;
+
+    diag.totalWorldCollisionObjects = m_world->getNumCollisionObjects();
+
+    if (!vehicle || !vehicle->body.getRigidBody()) return diag;
+
+    const btRigidBody* rb = vehicle->body.getRigidBody();
+    diag.rigidBodyPtr = rb;
+    diag.rigidBodyUserIndex = rb->getUserIndex();
+    diag.vehicleId = vehicle->config.id;
+
+    const btCollisionShape* shape = rb->getCollisionShape();
+    if (shape) {
+        diag.collisionShapeType = shape->getShapeType();
+        diag.collisionShapeTypeName = shape->getName() ? shape->getName() : "Unknown";
+    }
+
+    const btCompoundShape* compound = vehicle->body.getCompoundShape();
+    if (compound) {
+        diag.childShapeCount = compound->getNumChildShapes();
+    }
+
+    const auto& col = vehicle->body.getGeneratedCollision();
+    diag.usingModelDerivedCollision = (!col.pieces.empty());
+    diag.strategyName = getStrategyName(col.strategyUsed);
+
+    // Count active vehicle rigid bodies in the Bullet world
+    const btCollisionObjectArray& objs = m_world->getCollisionObjectArray();
+    int vehicleObjCount = 0;
+    int duplicateChassisCount = 0;
+
+    for (int i = 0; i < objs.size(); ++i) {
+        const btCollisionObject* obj = objs[i];
+        if (!obj) continue;
+        if (obj == rb) {
+            ++vehicleObjCount;
+        } else if (obj->getUserIndex() == -1) {
+            // Another collision object marked with vehicle chassis index (-1)
+            ++duplicateChassisCount;
+        }
+    }
+
+    diag.activeVehicleCollisionObjects = vehicleObjCount;
+    diag.legacyPlaceholderRegistered = (duplicateChassisCount > 0);
+    diag.colliderReplacementSucceeded = (vehicleObjCount == 1 && duplicateChassisCount == 0);
+
+    return diag;
 }
 
 } // namespace torquelab

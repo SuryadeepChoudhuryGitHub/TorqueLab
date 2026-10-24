@@ -52,11 +52,28 @@ struct SpawnPreset {
 
 const std::vector<SpawnPreset>& getProvingGroundPresets();
 
+struct VehicleCollisionDiagnostics {
+    std::string vehicleId;
+    const btRigidBody* rigidBodyPtr{nullptr};
+    int rigidBodyUserIndex{0};
+    int collisionShapeType{0};
+    std::string collisionShapeTypeName;
+    int childShapeCount{0};
+    int activeVehicleCollisionObjects{0};
+    int totalWorldCollisionObjects{0};
+    bool collisionWireframeVisible{false};
+    bool legacyPlaceholderRegistered{false};
+    bool colliderReplacementSucceeded{true};
+    bool usingModelDerivedCollision{false};
+    std::string strategyName;
+};
+
 class PhysicsWorld {
 public:
     explicit PhysicsWorld(
         const VehicleConfig& config = createDefaultVehicleConfig(),
-        bool buildDefaultTrack = true
+        bool buildDefaultTrack = true,
+        const GeneratedVehicleCollision* collision = nullptr
     );
     ~PhysicsWorld();
 
@@ -88,6 +105,18 @@ public:
      * Teleports the vehicle to a named Proving Ground zone preset.
      */
     void teleportToPreset(const SpawnPreset& preset);
+
+    /**
+     * Replaces the simulated vehicle with a new VehicleConfig (live switching).
+     * Re-creates the chassis rigid body and suspension with 0 memory leaks or stale handles.
+     */
+    void switchVehicle(const VehicleConfig& newConfig, const GeneratedVehicleCollision* collision = nullptr);
+
+    /**
+     * Inspects the active Bullet dynamics world and vehicle collision setup to detect
+     * duplicate chassis rigid bodies, stale frames, or lifecycle leaks.
+     */
+    VehicleCollisionDiagnostics getCollisionDiagnostics(bool wireframeVisible = true) const;
 
     btDiscreteDynamicsWorld* getDynamicsWorld() const { return m_world.get(); }
 

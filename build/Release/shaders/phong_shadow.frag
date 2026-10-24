@@ -67,8 +67,8 @@ vec3 acesToneMap(vec3 x) {
 void main() {
     vec3 albedo = uBaseColor;
     if (uUseTexture != 0) {
-        vec3 texColor = texture(uAlbedoMap, vTexCoord * uUvScale).rgb;
-        albedo *= texColor;
+        vec4 texColor = texture(uAlbedoMap, vTexCoord * uUvScale);
+        albedo = mix(albedo, texColor.rgb, texColor.a);
     }
 
     vec3 color;

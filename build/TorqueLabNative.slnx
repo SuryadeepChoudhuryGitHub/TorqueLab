@@ -49,6 +49,7 @@
 		<BuildDependency Project="glad.vcxproj"/>
 		<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
 		<BuildDependency Project="imgui_lib.vcxproj"/>
+		<BuildDependency Project="vhacd_lib.vcxproj"/>
 	</Project>
 	<Project Path="TorqueLabNativeTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4826eee4-75a1-3c17-b036-423b77272d2f">
 		<BuildDependency Project="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj"/>
@@ -56,12 +57,14 @@
 		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
 		<BuildDependency Project="TorqueLabPhysics.vcxproj"/>
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="vhacd_lib.vcxproj"/>
 	</Project>
 	<Project Path="TorqueLabPhysics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="519818b1-a536-3757-8e12-8e8f91bab3da">
 		<BuildDependency Project="_deps/bullet3-build/src/BulletCollision/BulletCollision.vcxproj"/>
 		<BuildDependency Project="_deps/bullet3-build/src/BulletDynamics/BulletDynamics.vcxproj"/>
 		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="vhacd_lib.vcxproj"/>
 	</Project>
 	<Project Path="glad.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="525c5bb9-bf3a-3f8d-8eba-a03f81522b9f">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
@@ -69,6 +72,10 @@
 	<Project Path="imgui_lib.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="bb26c950-70b2-3949-b4c0-fe12f82cd387">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
 		<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
+	</Project>
+	<Project Path="vhacd_lib.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="a2811217-e481-3d01-97af-e56009a41133">
+		<BuildDependency Project="_deps/bullet3-build/src/LinearMath/LinearMath.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
 	</Project>
 	<Folder Name="/CMakePredefinedTargets/">
 		<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8b309476-c525-3bb5-8679-67ae77a8dedc" DefaultStartup="true">
@@ -90,6 +97,7 @@
 			<BuildDependency Project="glad.vcxproj"/>
 			<BuildDependency Project="_deps/glfw-build/src/glfw.vcxproj"/>
 			<BuildDependency Project="imgui_lib.vcxproj"/>
+			<BuildDependency Project="vhacd_lib.vcxproj"/>
 		</Project>
 		<Project Path="INSTALL.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="1b313973-50fb-31e6-b11b-2c0e9bc240b0">
 			<BuildDependency Project="ALL_BUILD.vcxproj"/>

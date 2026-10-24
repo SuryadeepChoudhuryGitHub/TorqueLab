@@ -32,7 +32,7 @@ double computeBumpStopForce(
     if (rawLength >= threshold) {
         return 0.0;
     }
-    const double penetration = threshold - rawLength;
+    const double penetration = std::clamp(threshold - rawLength, 0.0, engageZone * 2.5);
     const double normalized = penetration / engageZone;
     return bumpStopStiffness * penetration * (0.4 + 0.6 * normalized);
 }

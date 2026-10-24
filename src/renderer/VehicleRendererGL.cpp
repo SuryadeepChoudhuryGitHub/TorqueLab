@@ -278,14 +278,7 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
             const Mat4 wheelBaseWorld = Mat4::fromTRS(wPos, wheelWorldQuat);
 
             for (size_t k = 0; k < parts.size(); ++k) {
-                const auto& p = parts[k];
-                // Offset of this sub-element (rim, tire, cap) from the computed quadrant wheel center
-                const Mat4 subPartLocal = Mat4::fromTRS(
-                    p.offsetFromWheelCenter,
-                    p.wheelLocalRotation,
-                    p.wheelLocalScale
-                );
-                outMats[k] = Mat4::multiply(wheelBaseWorld, subPartLocal);
+                outMats[k] = Mat4::multiply(wheelBaseWorld, parts[k].subPartLocalMatrix);
             }
         }
     }
@@ -482,47 +475,6 @@ void VehicleRendererGL::renderVisualDebug(Shader& lineShader, Shader& mainShader
         );
     }
 
-    // 3. Imported Model Bounding Box Wireframe (Cyan)
-    if (m_importedModel.loadedSuccessfully) {
-        const Vec3 bMin = m_importedModel.aabbMin;
-        const Vec3 bMax = m_importedModel.aabbMax;
-        const Color3 boxCol{0.2f, 0.9f, 1.0f};
-
-        // 8 Corners of the AABB in model space
-        const std::array<Vec3, 8> cornersLocal = {
-            Vec3{bMin.x, bMin.y, bMin.z},
-            Vec3{bMax.x, bMin.y, bMin.z},
-            Vec3{bMax.x, bMin.y, bMax.z},
-            Vec3{bMin.x, bMin.y, bMax.z},
-            Vec3{bMin.x, bMax.y, bMin.z},
-            Vec3{bMax.x, bMax.y, bMin.z},
-            Vec3{bMax.x, bMax.y, bMax.z},
-            Vec3{bMin.x, bMax.y, bMax.z}
-        };
-
-        std::array<Vec3, 8> cornersWorld{};
-        for (size_t c = 0; c < 8; ++c) {
-            cornersWorld[c] = mat4TransformPoint(m_importedChassisWorldMatrix, cornersLocal[c]);
-        }
-
-        // Draw 12 bounding box edges
-        // Bottom ring
-        addDebugLine(cornersWorld[0], cornersWorld[1], boxCol);
-        addDebugLine(cornersWorld[1], cornersWorld[2], boxCol);
-        addDebugLine(cornersWorld[2], cornersWorld[3], boxCol);
-        addDebugLine(cornersWorld[3], cornersWorld[0], boxCol);
-        // Top ring
-        addDebugLine(cornersWorld[4], cornersWorld[5], boxCol);
-        addDebugLine(cornersWorld[5], cornersWorld[6], boxCol);
-        addDebugLine(cornersWorld[6], cornersWorld[7], boxCol);
-        addDebugLine(cornersWorld[7], cornersWorld[4], boxCol);
-        // Vertical pillars
-        addDebugLine(cornersWorld[0], cornersWorld[4], boxCol);
-        addDebugLine(cornersWorld[1], cornersWorld[5], boxCol);
-        addDebugLine(cornersWorld[2], cornersWorld[6], boxCol);
-        addDebugLine(cornersWorld[3], cornersWorld[7], boxCol);
-    }
-
     // Render debug lines
     if (!lines.empty()) {
         if (m_debugLineVao == 0) {
@@ -556,6 +508,17 @@ void VehicleRendererGL::renderVisualDebug(Shader& lineShader, Shader& mainShader
         mainShader.applyMaterial(sphereMat);
         mainShader.setMat4("uModel", Mat4::fromTRS(m_wheelCentersWorld[static_cast<size_t>(i)], quatIdentity()));
         m_debugSphereMesh.draw();
+    }
+}
+
+VehicleRendererGL::~VehicleRendererGL() {
+    if (m_debugLineVao != 0) {
+        glDeleteVertexArrays(1, &m_debugLineVao);
+        m_debugLineVao = 0;
+    }
+    if (m_debugLineVbo != 0) {
+        glDeleteBuffers(1, &m_debugLineVbo);
+        m_debugLineVbo = 0;
     }
 }
 

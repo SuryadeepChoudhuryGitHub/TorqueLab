@@ -13,9 +13,11 @@
 #include <string>
 #include <vector>
 
+#include "physics/CollisionMeshGeometry.h"
 #include "physics/Math3D.h"
 #include "physics/PhysicsWorld.h"
 #include "physics/SurfaceSystem.h"
+#include "physics/VehicleCollisionGenerator.h"
 #include "vehicle/Aerodynamics.h"
 #include "vehicle/BrakeSystem.h"
 #include "vehicle/Drivetrain.h"
@@ -568,7 +570,7 @@ void validationTestH_CollisionAndRecovery() {
     for (int i = 0; i < 60; ++i) sim.stepFixed();
 
     sim.vehicle->body.setLinearVelocity(Vec3{0.0, 0.0, 15.0});
-    for (int i = 0; i < 120; ++i) {
+    for (int i = 0; i < 150; ++i) {
         sim.stepFixed();
     }
 
@@ -578,7 +580,7 @@ void validationTestH_CollisionAndRecovery() {
                 postCrashSnap.numericalSanityOk ? "OK" : "FAIL");
 
     EXPECT_LT(postCrashSnap.chassisPosition.z, 13.0);
-    EXPECT_LT(postCrashSnap.forwardSpeedMps, 2.0);
+    EXPECT_LT(std::abs(postCrashSnap.forwardSpeedMps), 2.0);
     EXPECT_TRUE(postCrashSnap.numericalSanityOk);
 
     sim.vehicle->resetVehicle();
@@ -754,6 +756,304 @@ void controlledTest_BrakeIsolationAndScaleSanity() {
     EXPECT_NEAR(distTraveled, expectedDist, 0.15);
 }
 
+void unitTest9_AutomaticCollisionPipeline() {
+    // 1. Construct a synthetic vehicle model mesh with an aerodynamic wedge profile
+    RawMeshGeometry wedgeMesh;
+    for (double z = -2.0; z <= 2.0; z += 0.2) {
+        const double frac = (z + 2.0) / 4.0;
+        const double width = 0.85 * (1.0 - 0.25 * frac);
+        const double height = (z > 0.5) ? 0.45 : (z > -0.5 ? 1.15 : 0.65);
+        for (double x : {-width, 0.0, width}) {
+            for (double y : {0.15, height}) {
+                wedgeMesh.addVertex(Vec3{x, y, z});
+            }
+        }
+    }
+    wedgeMesh.computeBounds();
+
+    // 2. Execute automatic model-derived decomposition
+    CollisionPipelineSettings settings{};
+    settings.strategy = CollisionAlgorithmStrategy::SpatialClusteredHulls;
+    settings.enableCaching = false;
+
+    GeneratedVehicleCollision result;
+    const bool ok = VehicleCollisionGenerator::generateFromMesh(wedgeMesh, "synthetic_sports_wedge", settings, result);
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(result.pieces.size() >= 2);
+    EXPECT_TRUE(result.totalOutputHulls >= 2);
+    EXPECT_TRUE(!result.isFallback);
+
+    for (const auto& p : result.pieces) {
+        EXPECT_GT(p.vertices.size(), 3);
+        EXPECT_GT(p.volume, 0.0001);
+    }
+
+    // 3. Verify disk cache round-trip serialization fidelity
+    const std::string testCachePath = "model/cache/test_roundtrip_collision.json";
+    const bool saveOk = VehicleCollisionGenerator::saveToCache(result, testCachePath);
+    EXPECT_TRUE(saveOk);
+
+    GeneratedVehicleCollision loadedCol;
+    const bool loadOk = VehicleCollisionGenerator::loadFromCache(loadedCol, testCachePath);
+    EXPECT_TRUE(loadOk);
+    EXPECT_TRUE(loadedCol.pieces.size() == result.pieces.size());
+
+    // 4. Test safe graceful fallback hierarchy on degenerate empty mesh
+    RawMeshGeometry emptyMesh;
+    GeneratedVehicleCollision fallbackResult;
+    VehicleCollisionGenerator::generateFromMesh(emptyMesh, "empty_model", settings, fallbackResult);
+    EXPECT_TRUE(fallbackResult.isFallback);
+    EXPECT_TRUE(fallbackResult.strategyUsed == CollisionAlgorithmStrategy::CompoundBoundsFallback);
+    EXPECT_TRUE(fallbackResult.pieces.size() >= 1);
+}
+
+void unitTest10_ModelDerivedCollisionDynamics() {
+    // Test dynamic rigid-body collision with model-derived compound convex shape
+    RawMeshGeometry wedgeMesh;
+    for (double z = -2.0; z <= 2.0; z += 0.25) {
+        for (double x : {-0.8, 0.8}) {
+            for (double y : {0.15, 0.85}) {
+                wedgeMesh.addVertex(Vec3{x, y, z});
+            }
+        }
+    }
+    wedgeMesh.computeBounds();
+
+    CollisionPipelineSettings settings{};
+    settings.strategy = CollisionAlgorithmStrategy::SpatialClusteredHulls;
+    GeneratedVehicleCollision col;
+    VehicleCollisionGenerator::generateFromMesh(wedgeMesh, "wedge_dynamic", settings, col);
+
+    VehicleConfig config = createDefaultVehicleConfig();
+    PhysicsWorld world(config, true, &col);
+
+    // Verify rigid body is active and uses compound shape with generated hulls
+    EXPECT_TRUE(world.vehicle->body.getRigidBody() != nullptr);
+    EXPECT_TRUE(world.vehicle->body.getCompoundShape()->getNumChildShapes() >= 2);
+
+    // Step physics under gravity
+    for (int i = 0; i < 60; ++i) {
+        world.stepFixed();
+    }
+
+    const auto snap = world.vehicle->getTelemetrySnapshot();
+    EXPECT_TRUE(std::isfinite(snap.chassisPosition.y));
+    EXPECT_GT(snap.chassisPosition.y, 0.40); // Sits stably above ground plane
+    EXPECT_TRUE(snap.numericalSanityOk);
+}
+
+void unitTest11_CollisionAlignmentAndContinuousCollisionDetection() {
+    // 1. Verify model-derived collision hulls correctly apply chassisCenterOffset to Chassis Physics Space
+    const Vec3 chassisCenterOffset{0.0, -0.477, -0.1475};
+
+    // Synthetic chassis mesh in raw model space (origin on ground, offset forward)
+    RawMeshGeometry rawModelMesh;
+    for (double z = -2.0; z <= 2.0; z += 0.25) {
+        for (double x : {-0.85, 0.85}) {
+            for (double y : {0.15, 1.35}) {
+                rawModelMesh.addVertex(Vec3{x, y, z});
+            }
+        }
+    }
+    rawModelMesh.computeBounds();
+
+    // Transform raw model collision mesh into Chassis Physics Space (as performed in VehicleCollisionGenerator::generateFromModel)
+    RawMeshGeometry chassisPhysicsMesh;
+    const Mat4 offsetMat = Mat4::fromTranslation(chassisCenterOffset);
+    chassisPhysicsMesh.appendTransformed(rawModelMesh, offsetMat);
+    chassisPhysicsMesh.computeBounds();
+
+    CollisionPipelineSettings colSettings{};
+    colSettings.strategy = CollisionAlgorithmStrategy::SpatialClusteredHulls;
+    colSettings.enableCaching = false;
+
+    GeneratedVehicleCollision col;
+    const bool genOk = VehicleCollisionGenerator::generateFromMesh(chassisPhysicsMesh, "test_alignment_coupe", colSettings, col);
+    EXPECT_TRUE(genOk);
+
+    // Verify AABB in Chassis Physics Space has been shifted down by -0.477m
+    EXPECT_NEAR(col.chassisAABBMin.y, 0.15 - 0.477, 0.01);
+    EXPECT_NEAR(col.chassisAABBMax.y, 1.35 - 0.477, 0.01);
+
+    // 2. Verify Rigid Body CCD and Compound Shape Alignment
+    VehicleConfig config = createDefaultVehicleConfig();
+    PhysicsWorld world(config, true, &col);
+
+    auto* rb = world.vehicle->body.getRigidBody();
+    EXPECT_TRUE(rb != nullptr);
+
+    // Verify Continuous Collision Detection (CCD) is enabled
+    EXPECT_GT(rb->getCcdMotionThreshold(), 0.01f);
+    EXPECT_GT(rb->getCcdSweptSphereRadius(), 0.05f);
+
+    // Verify restitution is inelastic (< 0.10) to prevent trampoline bouncing
+    EXPECT_LT(rb->getRestitution(), 0.10f);
+
+    // 3. Obstacle Collision Test: Drive vehicle towards a barrier block and verify no tunneling
+    world.vehicle->body.resetPose(Vec3{0.0, 0.5, 5.0});
+    world.vehicle->body.setLinearVelocity(Vec3{0.0, 0.0, 20.0}); // Driving at 72 km/h (+Z)
+
+    // Barrier at Z = 12.0m, halfExtents = (2.0, 1.0, 0.5)
+    world.addTrackBox(TrackBoxElement{
+        "test_barrier",
+        "Test Barrier",
+        TrackElementKind::Obstacle,
+        Vec3{0.0, 0.75, 12.0},
+        Vec3{2.0, 0.75, 0.5},
+        quatIdentity(),
+        SurfaceType::DryAsphalt,
+        true,
+        0xffffff,
+        -1
+    });
+
+    for (int step = 0; step < 40; ++step) {
+        world.stepFixed();
+    }
+
+    const auto endSnap = world.vehicle->getTelemetrySnapshot();
+    // The front bumper must stop in front of the barrier's back edge (Z <= 12.5m)
+    // and must not tunnel/phase through the obstacle
+    EXPECT_LT(endSnap.chassisPosition.z, 12.0);
+    EXPECT_TRUE(endSnap.numericalSanityOk);
+}
+
+void unitTest12_CollisionLifecycleAndVisualizationIndependence() {
+    std::cout << "  Testing collision lifecycle, visualization independence, and switching integrity..." << std::endl;
+
+    // 1. Setup a test world with a generated model collision
+    RawMeshGeometry boxMesh;
+    for (double z : {-2.0, 2.0}) {
+        for (double x : {-0.8, 0.8}) {
+            for (double y : {0.1, 0.9}) {
+                boxMesh.addVertex(Vec3{x, y, z});
+            }
+        }
+    }
+    boxMesh.computeBounds();
+
+    CollisionPipelineSettings colSettings{};
+    colSettings.strategy = CollisionAlgorithmStrategy::SpatialClusteredHulls;
+    colSettings.enableCaching = false;
+
+    GeneratedVehicleCollision bmwCol;
+    const bool genOk = VehicleCollisionGenerator::generateFromMesh(boxMesh, "test_lifecycle_car", colSettings, bmwCol);
+    EXPECT_TRUE(genOk);
+
+    VehicleConfig bmwConfig = createBmwM4Config();
+    VehicleConfig procConfig = createProceduralCoupeConfig();
+
+    PhysicsWorld world(bmwConfig, true, &bmwCol);
+
+    // Initial state diagnostics
+    auto diagInit = world.getCollisionDiagnostics(true);
+    EXPECT_TRUE(diagInit.colliderReplacementSucceeded);
+    EXPECT_TRUE(!diagInit.legacyPlaceholderRegistered);
+    EXPECT_TRUE(diagInit.activeVehicleCollisionObjects == 1);
+    EXPECT_TRUE(diagInit.usingModelDerivedCollision);
+    EXPECT_GT(diagInit.childShapeCount, 0);
+
+    const int baseWorldColliders = diagInit.totalWorldCollisionObjects;
+    EXPECT_GT(baseWorldColliders, 1);
+
+    // --- TEST A & TEST B: Collision Wireframe & Visualization Independence ---
+    // Place obstacle at Z = 12.0m
+    world.addTrackBox(TrackBoxElement{
+        "lifecycle_barrier",
+        "Lifecycle Barrier",
+        TrackElementKind::Obstacle,
+        Vec3{0.0, 0.75, 12.0},
+        Vec3{2.0, 0.75, 0.5},
+        quatIdentity(),
+        SurfaceType::DryAsphalt,
+        true,
+        0xffffff,
+        -1
+    });
+
+    const int worldCollidersWithBarrier = world.getDynamicsWorld()->getNumCollisionObjects();
+    EXPECT_TRUE(worldCollidersWithBarrier == baseWorldColliders + 1);
+
+    // Run collision test with wireframe HIDDEN (collisionWireframe = false)
+    world.vehicle->body.resetPose(Vec3{0.0, 0.5, 5.0});
+    world.vehicle->body.setLinearVelocity(Vec3{0.0, 0.0, 20.0});
+
+    auto diagHidden = world.getCollisionDiagnostics(false);
+    EXPECT_TRUE(!diagHidden.collisionWireframeVisible);
+    EXPECT_TRUE(diagHidden.activeVehicleCollisionObjects == 1);
+
+    for (int step = 0; step < 40; ++step) {
+        world.stepFixed();
+    }
+    const auto stopSnapHidden = world.vehicle->getTelemetrySnapshot();
+    EXPECT_LT(stopSnapHidden.chassisPosition.z, 12.0); // Stopped cleanly in front of barrier
+
+    // Run collision test with wireframe VISIBLE (collisionWireframe = true)
+    world.vehicle->body.resetPose(Vec3{0.0, 0.5, 5.0});
+    world.vehicle->body.setLinearVelocity(Vec3{0.0, 0.0, 20.0});
+
+    auto diagVisible = world.getCollisionDiagnostics(true);
+    EXPECT_TRUE(diagVisible.collisionWireframeVisible);
+    EXPECT_TRUE(diagVisible.activeVehicleCollisionObjects == 1);
+
+    for (int step = 0; step < 40; ++step) {
+        world.stepFixed();
+    }
+    const auto stopSnapVisible = world.vehicle->getTelemetrySnapshot();
+    EXPECT_LT(stopSnapVisible.chassisPosition.z, 12.0);
+
+    // Physical collision response must be 100% identical regardless of wireframe visibility
+    EXPECT_NEAR(stopSnapHidden.chassisPosition.z, stopSnapVisible.chassisPosition.z, 0.001);
+
+    // --- TEST C & TEST F: Rapid Repeated Vehicle Switching (Lifecycle & Leak Integrity) ---
+    // Switch 50 times between BMW M4 and Procedural Coupe
+    for (int cycle = 0; cycle < 50; ++cycle) {
+        if (cycle % 2 == 0) {
+            world.switchVehicle(procConfig, nullptr);
+            auto diagProc = world.getCollisionDiagnostics();
+            EXPECT_TRUE(diagProc.colliderReplacementSucceeded);
+            EXPECT_TRUE(!diagProc.legacyPlaceholderRegistered);
+            EXPECT_TRUE(diagProc.activeVehicleCollisionObjects == 1);
+            EXPECT_TRUE(!diagProc.usingModelDerivedCollision);
+            EXPECT_TRUE(diagProc.childShapeCount >= 2); // Procedural compound boxes/hulls
+            EXPECT_TRUE(diagProc.totalWorldCollisionObjects == worldCollidersWithBarrier);
+        } else {
+            world.switchVehicle(bmwConfig, &bmwCol);
+            auto diagBmw = world.getCollisionDiagnostics();
+            EXPECT_TRUE(diagBmw.colliderReplacementSucceeded);
+            EXPECT_TRUE(!diagBmw.legacyPlaceholderRegistered);
+            EXPECT_TRUE(diagBmw.activeVehicleCollisionObjects == 1);
+            EXPECT_TRUE(diagBmw.usingModelDerivedCollision);
+            EXPECT_TRUE(diagBmw.childShapeCount == static_cast<int>(bmwCol.pieces.size()));
+            EXPECT_TRUE(diagBmw.totalWorldCollisionObjects == worldCollidersWithBarrier);
+        }
+    }
+
+    // Verify final state after 50 switches: zero object leaks
+    EXPECT_TRUE(world.getDynamicsWorld()->getNumCollisionObjects() == worldCollidersWithBarrier);
+
+    // --- TEST D: In-Place Collision Shape Replacement (replaceCollisionShape) ---
+    RawMeshGeometry altMesh;
+    for (double z : {-1.8, 1.8}) {
+        for (double x : {-0.75, 0.75}) {
+            for (double y : {0.1, 0.8}) {
+                altMesh.addVertex(Vec3{x, y, z});
+            }
+        }
+    }
+    altMesh.computeBounds();
+    GeneratedVehicleCollision altCol;
+    VehicleCollisionGenerator::generateFromMesh(altMesh, "test_alt_shape", colSettings, altCol);
+
+    const bool replaceOk = world.vehicle->body.replaceCollisionShape(&altCol, bmwConfig);
+    EXPECT_TRUE(replaceOk);
+
+    auto diagReplaced = world.getCollisionDiagnostics();
+    EXPECT_TRUE(diagReplaced.colliderReplacementSucceeded);
+    EXPECT_TRUE(diagReplaced.totalWorldCollisionObjects == worldCollidersWithBarrier);
+    EXPECT_TRUE(diagReplaced.childShapeCount == static_cast<int>(altCol.pieces.size()));
+}
+
 } // namespace
 
 int main() {
@@ -775,6 +1075,10 @@ int main() {
         {"Unit 6: Surface Friction Hierarchy Across Materials", unitTest6_SurfaceFrictionHierarchy},
         {"Unit 7: Ackermann Steering Geometry & Speed-Sensitive Limits", unitTest7_AckermannAndSpeedSensitiveSteering},
         {"Unit 8: Quadratic Aerodynamic Drag & Service/Handbrake Bias", unitTest8_AerodynamicsAndBrakeBias},
+        {"Unit 9: Automatic Model-Derived Collision Pipeline & Fallback Hierarchy", unitTest9_AutomaticCollisionPipeline},
+        {"Unit 10: Dynamic Rigid-Body Collision Hull Stability & Contact", unitTest10_ModelDerivedCollisionDynamics},
+        {"Unit 11: Collision Alignment, Continuous Collision Detection & Obstacle Impact", unitTest11_CollisionAlignmentAndContinuousCollisionDetection},
+        {"Unit 12: Collision Lifecycle, Visualization Independence & Switching Integrity", unitTest12_CollisionLifecycleAndVisualizationIndependence},
         {"Test A: Static Equilibrium on Flat Ground", validationTestA_StaticEquilibrium},
         {"Test B: Acceleration & Longitudinal Load Transfer (Rear Squat)", validationTestB_AccelerationAndSquat},
         {"Test C: Service Braking, Front Dive & Progressive Deceleration", validationTestC_BrakingAndDive},

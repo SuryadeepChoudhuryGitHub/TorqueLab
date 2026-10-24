@@ -7,6 +7,12 @@
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\physics\PhysicsWorld.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\physics\VehicleCollisionGenerator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\vehicle\VehicleConfig.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\# My Folder\My Work\Visual Studio script\WebApplications\TorqueLab\src\vehicle\SuspensionSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

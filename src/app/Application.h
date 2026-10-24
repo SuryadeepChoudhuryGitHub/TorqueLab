@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "input/InputControllerGLFW.h"
+#include "physics/CollisionMeshGeometry.h"
 #include "physics/PhysicsWorld.h"
 #include "renderer/CameraControllerGL.h"
 #include "renderer/DebugOverlayGL.h"
@@ -30,6 +31,7 @@ public:
     bool init(int width = 1440, int height = 900, bool visible = true);
     int run(int maxFrames = 0);
     std::string runValidationSuite();
+    void switchActiveVehicle(const std::string& vehicleId);
 
 private:
     static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
@@ -61,6 +63,7 @@ private:
     std::unique_ptr<CameraControllerGL> m_cameraController;
     std::unique_ptr<InputControllerGLFW> m_inputController;
     std::unique_ptr<ImGuiDashboard> m_dashboard;
+    GeneratedVehicleCollision m_bmwCollision;
 };
 
 } // namespace torquelab

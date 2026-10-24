@@ -44,8 +44,19 @@ std::string surfaceTypeToString(SurfaceType type) {
     return "dry_asphalt";
 }
 
-void SurfaceSystem::registerColliderSurface(int colliderHandle, SurfaceType surfaceType) {
+void SurfaceSystem::registerColliderSurface(int colliderHandle, SurfaceType surfaceType, bool isDriveable) {
     m_colliderSurfaces[colliderHandle] = surfaceType;
+    m_colliderDriveable[colliderHandle] = isDriveable;
+}
+
+bool SurfaceSystem::isColliderDriveable(int colliderHandle) const {
+    if (colliderHandle >= 0) {
+        const auto it = m_colliderDriveable.find(colliderHandle);
+        if (it != m_colliderDriveable.end()) {
+            return it->second;
+        }
+    }
+    return true;
 }
 
 const SurfaceProperties& SurfaceSystem::getSurfaceForCollider(int colliderHandle) const {
@@ -64,6 +75,7 @@ void SurfaceSystem::setDefaultSurface(SurfaceType surfaceType) {
 
 void SurfaceSystem::clear() {
     m_colliderSurfaces.clear();
+    m_colliderDriveable.clear();
 }
 
 } // namespace torquelab

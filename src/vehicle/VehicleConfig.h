@@ -1,11 +1,14 @@
 #pragma once
 /**
- * Complete Vehicle Physical Configuration Specification (SI Units).
+ * Complete Vehicle Physical & Visual Configuration Specification (SI Units).
  *
- * Baseline: Sports Coupe / Track Laboratory Vehicle (~1500 kg, RWD default, 52/48 weight distribution).
+ * Supports decoupled visual models (Imported GLB vs Procedural),
+ * vehicle-appropriate collision geometry (TaperedCompound vs Box),
+ * and JSON persistence.
  */
 
 #include <array>
+#include <string>
 #include <vector>
 #include "physics/Math3D.h"
 
@@ -17,12 +20,35 @@ enum class DrivetrainLayout {
     AWD
 };
 
+enum class VehicleVisualType {
+    ImportedGlb,
+    Procedural
+};
+
+enum class CollisionShapeType {
+    TaperedCompound,
+    Box
+};
+
 struct TorqueCurvePoint {
     double rpm{0.0};
     double torqueNm{0.0};
 };
 
 struct VehicleConfig {
+    // --- Identification & Visual Asset Binding ---
+    std::string id{"procedural_coupe"};
+    std::string displayName{"Procedural Sports Coupe"};
+    VehicleVisualType visualType{VehicleVisualType::Procedural};
+    std::string modelGlbPath{"model/BMW_M4.glb"};
+    std::string modelManifestPath{"model/BMW_M4_manifest.json"};
+    Vec3 visualOffset{0.0, 0.0, 0.0}; // Offset between physics chassis origin and visual model origin
+
+    // --- Collision Representation ---
+    CollisionShapeType collisionShapeType{CollisionShapeType::TaperedCompound};
+    double noseTaperWidthFraction{0.78}; // Front bumper tip width relative to mid-body
+    double rearTaperWidthFraction{0.84}; // Rear bumper tip width relative to mid-body
+
     // --- Mass & Inertia ---
     double mass{1500.0};                    // Total vehicle mass (kg)
     double comHeightOffset{0.0};            // Vertical Center-of-Mass offset relative to chassis origin (m)
@@ -32,11 +58,11 @@ struct VehicleConfig {
     // --- Chassis & Wheel Geometry ---
     double wheelbase{2.70};                 // Distance between front and rear axles (m)
     double trackWidth{1.60};                // Lateral distance between left and right wheels (m)
-    Vec3 chassisHalfExtents{0.88, 0.36, 2.18}; // Collision box half-extents (m): 1.76m wide, 0.72m tall, 4.36m long
+    Vec3 chassisHalfExtents{0.88, 0.36, 2.18}; // Collision half-extents (m): 1.76m wide, 0.72m tall, 4.36m long
     double suspensionMountHeight{0.10};     // Height of upper suspension mount in chassis frame (m)
     double wheelRadius{0.32};               // Tire outer radius (m)
     double wheelWidth{0.235};               // Tire width (m)
-    double wheelInertia{1.15};              // Rotational inertia of a single wheel + tire + rotor assembly (kg*m^2)
+    double wheelInertia{1.15};              // Rotational inertia of a single wheel assembly (kg*m^2)
 
     // --- Suspension & Anti-Roll Bars ---
     double suspensionRestLength{0.38};      // Uncompressed spring rest length (m)
@@ -56,9 +82,9 @@ struct VehicleConfig {
     double tireFrictionCoeff{1.10};         // Nominal peak tire friction coefficient on dry asphalt (mu_0)
     double tireLongitudinalStiffness{13.0}; // Longitudinal slip stiffness factor B_x
     double tireLateralStiffness{11.5};      // Cornering stiffness factor B_y
-    double tireLoadSensitivity{0.12};       // Load sensitivity coefficient (grip reduction per nominal load multiple)
+    double tireLoadSensitivity{0.12};       // Load sensitivity coefficient
     double nominalTireLoad{3700.0};         // Reference vertical load per tire F_z0 (N)
-    double tireForceApplicationHeightOffset{0.06}; // Height above ground contact point where horizontal tire forces act (m)
+    double tireForceApplicationHeightOffset{0.06}; // Height above ground contact where forces act (m)
 
     // --- Steering System ---
     double maxSteeringAngle{0.60};          // Maximum front wheel steering angle at low speed (rad, ~34.4 deg)
@@ -107,18 +133,19 @@ struct VehicleConfig {
     double rollingResistanceCoeff{0.014};   // Baseline tire rolling resistance coefficient C_rr
 };
 
+/** Built-in vehicle presets */
+VehicleConfig createProceduralCoupeConfig();
+VehicleConfig createBmwM4Config();
+
 inline VehicleConfig createDefaultVehicleConfig() {
-    return VehicleConfig{};
+    return createProceduralCoupeConfig();
 }
 
-/**
- * Computes the local positions of the 4 suspension upper mounts in the chassis coordinate frame.
- * Wheel ordering:
- *   0: Front-Left  (+X, +Z)
- *   1: Front-Right (-X, +Z)
- *   2: Rear-Left   (+X, -Z)
- *   3: Rear-Right  (-X, -Z)
- */
+/** JSON persistence */
+bool saveVehicleConfigToJson(const VehicleConfig& cfg, const std::string& filePath);
+bool loadVehicleConfigFromJson(VehicleConfig& outCfg, const std::string& filePath);
+
+/** Local mount positions */
 inline std::array<Vec3, 4> getWheelMountPositionsLocal(const VehicleConfig& config) {
     const double halfTrack = config.trackWidth * 0.5;
     const double halfWheelbase = config.wheelbase * 0.5;
@@ -131,17 +158,11 @@ inline std::array<Vec3, 4> getWheelMountPositionsLocal(const VehicleConfig& conf
     };
 }
 
-/**
- * Computes the local Center of Mass (CoM) vector from frontWeightDistribution and comHeightOffset.
- */
 inline Vec3 getCenterOfMassLocal(const VehicleConfig& config) {
     const double zOffset = (config.frontWeightDistribution - 0.5) * config.wheelbase;
     return Vec3{0.0, config.comHeightOffset, zOffset};
 }
 
-/**
- * Computes theoretical static equilibrium chassis height on flat ground (y = 0).
- */
 inline double computeEquilibriumChassisHeight(const VehicleConfig& config) {
     const double totalStiffness = 2.0 * (config.frontSpringStiffness + config.rearSpringStiffness);
     const double avgCompression = (config.mass * GRAVITY) / totalStiffness;

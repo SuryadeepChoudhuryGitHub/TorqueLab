@@ -18,9 +18,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "physics/CollisionMeshGeometry.h"
 #include "physics/Math3D.h"
 #include "renderer/Mesh.h"
 #include "renderer/Shader.h"
+#include "renderer/Texture2D.h"
 #include "vehicle/VehicleConfig.h"
 
 namespace torquelab {
@@ -42,6 +44,7 @@ enum class ModelPartRole {
 struct LoadedModelPart {
     std::string name;
     Mesh mesh;
+    RawMeshGeometry cpuGeometry; // Retained CPU vertices and indices in local node space
     Mat4 localBindMatrix{Mat4::identity()};
     Vec3 localPosition{0.0, 0.0, 0.0};
     Quat localRotation{0.0, 0.0, 0.0, 1.0};
@@ -56,12 +59,17 @@ struct LoadedModelPart {
     Vec3 offsetFromWheelCenter{0.0, 0.0, 0.0};
     Quat wheelLocalRotation{0.0, 0.0, 0.0, 1.0};
     Vec3 wheelLocalScale{1.0, 1.0, 1.0};
+    Mat4 subPartLocalMatrix{Mat4::identity()}; // Pre-computed relative transform: T(-pivot) * localBindMatrix
 };
 
 struct LoadedVehicleModel {
     std::string modelName{"BMW M4 Coupe"};
     std::string filePath;
     bool loadedSuccessfully{false};
+
+    // Retained CPU Collision Geometry (Model Space)
+    RawMeshGeometry chassisCollisionMesh; // Accumulated chassis body triangles in local model space
+    std::array<RawMeshGeometry, 4> wheelMeshes; // Wheels in quadrant 0=FL, 1=FR, 2=RL, 3=RR
 
     // Identified wheel pivot centers in the model's coordinate frame
     std::array<Vec3, 4> modelWheelCenters{
@@ -86,6 +94,9 @@ struct LoadedVehicleModel {
     size_t totalVertices{0};
     size_t totalTriangles{0};
     std::vector<std::string> diagnosticWarnings;
+
+    // OpenGL texture resources owned by this model
+    std::vector<std::unique_ptr<Texture2D>> loadedTextures;
 };
 
 class ModelLoaderGLB {

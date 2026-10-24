@@ -40,7 +40,8 @@ class SurfaceSystem {
 public:
     SurfaceSystem() = default;
 
-    void registerColliderSurface(int colliderHandle, SurfaceType surfaceType);
+    void registerColliderSurface(int colliderHandle, SurfaceType surfaceType, bool isDriveable = true);
+    bool isColliderDriveable(int colliderHandle) const;
     const SurfaceProperties& getSurfaceForCollider(int colliderHandle) const;
     void setDefaultSurface(SurfaceType surfaceType);
     SurfaceType getDefaultSurface() const { return m_defaultSurface; }
@@ -48,6 +49,7 @@ public:
 
 private:
     std::unordered_map<int, SurfaceType> m_colliderSurfaces;
+    std::unordered_map<int, bool> m_colliderDriveable;
     SurfaceType m_defaultSurface{SurfaceType::DryAsphalt};
 };
 

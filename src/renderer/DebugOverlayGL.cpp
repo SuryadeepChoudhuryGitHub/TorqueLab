@@ -1,4 +1,5 @@
 #include "renderer/DebugOverlayGL.h"
+#include <LinearMath/btConvexHullComputer.h>
 #include <algorithm>
 #include <cmath>
 
@@ -95,6 +96,118 @@ void DebugOverlayGL::addCircleXZ(
     }
 }
 
+void DebugOverlayGL::addBoxWireframe(
+    const btVector3& halfExtents,
+    const btTransform& worldTrans,
+    const Color3& color,
+    std::vector<LineVertex>& buffer
+) {
+    const btVector3 h = halfExtents;
+    const btVector3 corners[8] = {
+        worldTrans(btVector3(-h.x(), -h.y(), -h.z())),
+        worldTrans(btVector3( h.x(), -h.y(), -h.z())),
+        worldTrans(btVector3( h.x(),  h.y(), -h.z())),
+        worldTrans(btVector3(-h.x(),  h.y(), -h.z())),
+        worldTrans(btVector3(-h.x(), -h.y(),  h.z())),
+        worldTrans(btVector3( h.x(), -h.y(),  h.z())),
+        worldTrans(btVector3( h.x(),  h.y(),  h.z())),
+        worldTrans(btVector3(-h.x(),  h.y(),  h.z()))
+    };
+
+    auto toV = [](const btVector3& p) { return Vec3{p.x(), p.y(), p.z()}; };
+
+    // Bottom face
+    addLine(toV(corners[0]), toV(corners[1]), color, buffer);
+    addLine(toV(corners[1]), toV(corners[2]), color, buffer);
+    addLine(toV(corners[2]), toV(corners[3]), color, buffer);
+    addLine(toV(corners[3]), toV(corners[0]), color, buffer);
+
+    // Top face
+    addLine(toV(corners[4]), toV(corners[5]), color, buffer);
+    addLine(toV(corners[5]), toV(corners[6]), color, buffer);
+    addLine(toV(corners[6]), toV(corners[7]), color, buffer);
+    addLine(toV(corners[7]), toV(corners[4]), color, buffer);
+
+    // Vertical pillars
+    addLine(toV(corners[0]), toV(corners[4]), color, buffer);
+    addLine(toV(corners[1]), toV(corners[5]), color, buffer);
+    addLine(toV(corners[2]), toV(corners[6]), color, buffer);
+    addLine(toV(corners[3]), toV(corners[7]), color, buffer);
+}
+
+void DebugOverlayGL::addHullWireframe(
+    const btConvexHullShape* hull,
+    const btTransform& worldTrans,
+    const Color3& color,
+    std::vector<LineVertex>& buffer
+) {
+    if (!hull) return;
+    const int numPts = hull->getNumPoints();
+    if (numPts < 2) return;
+
+    auto toV = [](const btVector3& p) { return Vec3{p.x(), p.y(), p.z()}; };
+
+    const btVector3* pts = hull->getUnscaledPoints();
+
+    if (numPts >= 4) {
+        btConvexHullComputer computer;
+        computer.compute(reinterpret_cast<const btScalar*>(pts), sizeof(btVector3), numPts, 0.0f, 0.0f);
+        if (computer.edges.size() > 0) {
+            for (int e = 0; e < computer.edges.size(); ++e) {
+                const auto& edge = computer.edges[e];
+                const int v0 = edge.getSourceVertex();
+                const int v1 = edge.getTargetVertex();
+                if (v0 < v1) {
+                    addLine(toV(worldTrans(computer.vertices[v0])), toV(worldTrans(computer.vertices[v1])), color, buffer);
+                }
+            }
+            return;
+        }
+    }
+
+    for (int i = 0; i < numPts; ++i) {
+        for (int j = i + 1; j < numPts; ++j) {
+            addLine(toV(worldTrans(pts[i])), toV(worldTrans(pts[j])), color, buffer);
+        }
+    }
+}
+
+void DebugOverlayGL::addCompoundWireframe(
+    const btRigidBody* body,
+    const btCompoundShape* compound,
+    const Color3& color,
+    std::vector<LineVertex>& buffer
+) {
+    if (!body || !compound) return;
+    const btTransform& bodyTrans = body->getWorldTransform();
+
+    static const Color3 pieceColors[] = {
+        Color3::fromHex(0x10b981), // Emerald Green
+        Color3::fromHex(0x06b6d4), // Cyan
+        Color3::fromHex(0xf59e0b), // Amber
+        Color3::fromHex(0x8b5cf6), // Purple
+        Color3::fromHex(0xec4899), // Pink
+        Color3::fromHex(0x3b82f6), // Blue
+        Color3::fromHex(0x14b8a6), // Teal
+        Color3::fromHex(0xf97316)  // Orange
+    };
+
+    const int numChildren = compound->getNumChildShapes();
+    for (int i = 0; i < numChildren; ++i) {
+        const btTransform childWorld = bodyTrans * compound->getChildTransform(i);
+        const btCollisionShape* child = compound->getChildShape(i);
+        const Color3 childColor = (numChildren > 1) ? pieceColors[static_cast<size_t>(i) % 8] : color;
+
+        if (child->getShapeType() == BOX_SHAPE_PROXYTYPE) {
+            const auto* box = static_cast<const btBoxShape*>(child);
+            addBoxWireframe(box->getHalfExtentsWithMargin(), childWorld, childColor, buffer);
+        } else if (child->getShapeType() == CONVEX_HULL_SHAPE_PROXYTYPE) {
+            const auto* hull = static_cast<const btConvexHullShape*>(child);
+            addHullWireframe(hull, childWorld, childColor, buffer);
+        }
+    }
+}
+
 void DebugOverlayGL::render(
     const VehicleDynamics& vehicle,
     Shader& lineShader,
@@ -109,6 +222,12 @@ void DebugOverlayGL::render(
 
     std::vector<LineVertex> lines;
     lines.reserve(1024);
+
+    // 1. Physical Collision Shape Wireframe (exact Bullet physical boundaries)
+    if (showCollisionWireframe && vehicle.body.getRigidBody() && vehicle.body.getCompoundShape()) {
+        const Color3 cageColor = Color3::fromHex(0x22c55e); // Emerald Green
+        addCompoundWireframe(vehicle.body.getRigidBody(), vehicle.body.getCompoundShape(), cageColor, lines);
+    }
 
     // 1. Chassis Basis, Velocity, and Acceleration Arrows
     addArrow(comOrigin, snap.forwardDirWorld, 2.2, Color3::fromHex(0x38bdf8), lines);

@@ -28,6 +28,12 @@ struct DashboardCallbacks {
     std::function<void()> onRunValidationCheck;
     std::function<void(bool)> onToggleImportedModel;
     std::function<void()> onToggleVisualDebug;
+    std::function<void(const std::string&)> onSelectVehicle;
+    std::function<void()> onSaveVehicleJson;
+    std::function<void()> onReloadVehicleJson;
+    std::function<void()> onResetVehicleDefaults;
+    std::function<void(bool)> onToggleCollisionWireframe;
+    std::function<void(CollisionAlgorithmStrategy)> onRegenerateCollision;
 };
 
 class ImGuiDashboard {
@@ -51,7 +57,8 @@ public:
         bool useImportedModel = true,
         bool hasImportedModel = true,
         const std::string& modelName = "BMW M4 Coupe",
-        bool visualDebugEnabled = false
+        bool visualDebugEnabled = false,
+        bool collisionWireframeEnabled = true
     );
 
     void showValidationReport(const std::string& message, bool isSuccess = true);
@@ -84,7 +91,8 @@ private:
         bool useImportedModel,
         bool hasImportedModel,
         const std::string& modelName,
-        bool visualDebugEnabled
+        bool visualDebugEnabled,
+        bool collisionWireframeEnabled
     );
     void renderRightTelemetryPanel(
         const VehicleTelemetrySnapshot& snap,

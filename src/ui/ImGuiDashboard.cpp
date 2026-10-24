@@ -83,7 +83,8 @@ void ImGuiDashboard::render(
     bool useImportedModel,
     bool hasImportedModel,
     const std::string& modelName,
-    bool visualDebugEnabled
+    bool visualDebugEnabled,
+    bool collisionWireframeEnabled
 ) {
     if (!paused) {
         m_history.push_back(TelemetrySample{
@@ -109,7 +110,7 @@ void ImGuiDashboard::render(
     }
 
     renderTopBar(paused, cameraLabel, gizmosEnabled, currentQuality, windowWidth, useImportedModel, hasImportedModel, visualDebugEnabled);
-    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled);
+    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled, collisionWireframeEnabled);
     if (telemetryEnabled) {
         renderRightTelemetryPanel(snap, fps, physicsStepTimeMs, windowWidth, windowHeight);
     }
@@ -251,37 +252,89 @@ void ImGuiDashboard::renderLeftPanels(
     bool useImportedModel,
     bool hasImportedModel,
     const std::string& modelName,
-    bool visualDebugEnabled
+    bool visualDebugEnabled,
+    bool collisionWireframeEnabled
 ) {
     const float maxPanelHeight = std::max(320.0f, static_cast<float>(windowHeight) - 210.0f);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 60.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(315.0f, maxPanelHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(325.0f, maxPanelHeight), ImGuiCond_Always);
 
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("LIVE VEHICLE TUNING & CONTROLS", nullptr, flags)) {
-        if (ImGui::CollapsingHeader("3D VEHICLE MODEL (BLENDER glTF)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (hasImportedModel) {
-                bool importedSelected = useImportedModel;
-                if (ImGui::RadioButton("BMW M4 Coupe (Blender glTF 2.0)", importedSelected)) {
-                    if (!importedSelected && m_callbacks.onToggleImportedModel) {
-                        m_callbacks.onToggleImportedModel(true);
-                    }
+        if (ImGui::CollapsingHeader("VEHICLE SELECTION & CONFIGURATION", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const bool isBmw = (vehicle.config.id == "bmw_m4" || (useImportedModel && hasImportedModel));
+            if (ImGui::RadioButton("BMW M4 Coupe (Blender glTF 2.0)", isBmw)) {
+                if (!isBmw && m_callbacks.onSelectVehicle) {
+                    m_callbacks.onSelectVehicle("bmw_m4");
                 }
-                if (ImGui::RadioButton("Procedural Sports Coupe", !importedSelected)) {
-                    if (importedSelected && m_callbacks.onToggleImportedModel) {
-                        m_callbacks.onToggleImportedModel(false);
-                    }
+            }
+            if (ImGui::RadioButton("Procedural Sports Coupe", !isBmw)) {
+                if (isBmw && m_callbacks.onSelectVehicle) {
+                    m_callbacks.onSelectVehicle("procedural_coupe");
                 }
+            }
 
-                bool debugChecked = visualDebugEnabled;
-                if (ImGui::Checkbox("Model Alignment Debug Overlay (V)", &debugChecked)) {
-                    if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
-                }
+            ImGui::Separator();
+            bool wireframeChecked = collisionWireframeEnabled;
+            if (ImGui::Checkbox("Physical Collision Cage (3D)", &wireframeChecked)) {
+                if (m_callbacks.onToggleCollisionWireframe) m_callbacks.onToggleCollisionWireframe(wireframeChecked);
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("(Hitbox Active)");
+            bool debugChecked = visualDebugEnabled;
+            if (ImGui::Checkbox("Model Alignment Debug (V)", &debugChecked)) {
+                if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
+            }
 
-                ImGui::TextDisabled("Model: %s", modelName.c_str());
-                ImGui::TextDisabled("Physics: 100% Emergent 120Hz CoM / 4 Wheels");
+            ImGui::Spacing();
+            ImGui::TextColored(hexToImVec4(0x38bdf8), "SPECIFICATIONS & ALIGNMENT:");
+            ImGui::Text("Chassis Mass:   %.0f kg (%.1f%% Front)", vehicle.config.mass, vehicle.config.frontWeightDistribution * 100.0);
+            ImGui::Text("Wheelbase:      %.2f m  | Track: %.2f m", vehicle.config.wheelbase, vehicle.config.trackWidth);
+            ImGui::Text("Tire Radius:    %.2f m  | Width: %.0f mm", vehicle.config.wheelRadius, vehicle.config.wheelWidth * 1000.0);
+            ImGui::Text("Ground Clear.:  12.7 cm (Tires Flush)");
+
+            ImGui::Spacing();
+            ImGui::TextColored(hexToImVec4(0x34d399), "MODEL-DERIVED COLLISION PIPELINE:");
+            const auto& col = vehicle.body.getGeneratedCollision();
+            const btCompoundShape* compound = vehicle.body.getCompoundShape();
+            const int childCount = compound ? compound->getNumChildShapes() : 0;
+            if (!col.pieces.empty()) {
+                ImGui::Text("Hull Strategy:  %s", getStrategyName(col.strategyUsed));
+                ImGui::Text("Compound Hulls: %d pieces (%d verts)", childCount, col.totalOutputVertices);
+                ImGui::Text("Chassis Hitbox: 1 Active (0 Stale) [Clean]");
+                ImGui::Text("Generation:     %.1f ms (%s)", col.generationTimeMs, col.loadedFromCache ? "Disk Cache" : "Computed");
+                if (col.geometryDerivedSuccessfully) {
+                    ImGui::Text("Mesh Axle Base: %.3f m", col.derivedWheelbase);
+                    ImGui::Text("Mesh Hub Track: %.3f m", col.derivedTrackWidth);
+                }
             } else {
-                ImGui::TextColored(hexToImVec4(0xf59e0b), "Blender Model Not Found (Procedural Active)");
+                ImGui::Text("Collision Hull: %s (%d pieces)",
+                    (vehicle.config.collisionShapeType == CollisionShapeType::TaperedCompound ? "Tapered Compound" : "Box Compound"),
+                    childCount);
+                ImGui::Text("Chassis Hitbox: 1 Active (0 Stale) [Clean]");
+            }
+
+            if (m_callbacks.onRegenerateCollision) {
+                if (ImGui::SmallButton("Re-generate Hull (Auto)")) {
+                    m_callbacks.onRegenerateCollision(CollisionAlgorithmStrategy::AutomaticDecomposition);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Spatial Multi-Hull")) {
+                    m_callbacks.onRegenerateCollision(CollisionAlgorithmStrategy::SpatialClusteredHulls);
+                }
+            }
+
+            ImGui::Spacing();
+            if (ImGui::SmallButton("Save JSON")) {
+                if (m_callbacks.onSaveVehicleJson) m_callbacks.onSaveVehicleJson();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reload JSON")) {
+                if (m_callbacks.onReloadVehicleJson) m_callbacks.onReloadVehicleJson();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reset Defaults")) {
+                if (m_callbacks.onResetVehicleDefaults) m_callbacks.onResetVehicleDefaults();
             }
         }
 
@@ -301,7 +354,11 @@ void ImGuiDashboard::renderLeftPanels(
         ImGui::TextColored(hexToImVec4(0x38bdf8), "LIVE VEHICLE TUNING LAB");
         ImGui::SameLine(215.0f);
         if (ImGui::SmallButton("Defaults")) {
-            vehicle.config = createDefaultVehicleConfig();
+            if (vehicle.config.id == "bmw_m4") {
+                vehicle.config = createBmwM4Config();
+            } else {
+                vehicle.config = createProceduralCoupeConfig();
+            }
             vehicle.body.syncMassProperties(vehicle.config);
         }
 

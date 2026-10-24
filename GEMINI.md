@@ -26,7 +26,7 @@ cmake --build build --config Release --target TorqueLabNative TorqueLabNativeTes
 # 2. Run the interactive desktop application (1440x900 OpenGL 3.3 window)
 .\build\Release\TorqueLabNative.exe
 
-# 3. Run the 21-suite automated unit, validation & controlled physics test harness
+# 3. Run the 24-suite automated unit, validation & controlled physics test harness
 .\build\Release\TorqueLabNativeTests.exe
 
 # 4. Run full-pipeline acceleration telemetry table + 600-frame live OpenGL timing diagnostics
@@ -58,8 +58,10 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 
 ### `src/physics/` — Math Primitives, Bullet World & Surface Registry
 - [`src/physics/Math3D.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/Math3D.h): Double-precision `Vec3`, `Quat`, column-major float `Mat4` (for OpenGL), `VehicleBasis` (`forward`, `up`, `left`, `right`, `down`), `EulerAngles` (`yaw`, `pitch`, `roll`), and scalar helpers (`clamp`, `lerp`, `degToRad`, `radToDeg`).
+- [`src/physics/CollisionMeshGeometry.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/CollisionMeshGeometry.h): CPU-retained raw mesh storage (`RawMeshGeometry`), convex decomposition pieces (`ConvexDecompositionPiece`), collision pipeline configuration (`CollisionPipelineSettings`), strategy enum (`CollisionAlgorithmStrategy`), and generated collision container (`GeneratedVehicleCollision`).
+- [`src/physics/VehicleCollisionGenerator.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/VehicleCollisionGenerator.h) & [`VehicleCollisionGenerator.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/VehicleCollisionGenerator.cpp): Generic model-derived collision generation engine. Performs spatial voxel decimation, V-HACD volumetric decomposition, spatial topological clustering via `btConvexHullComputer`, automatic vehicle geometry derivation (wheelbase, track width, wheel radius, ground clearance), disk caching (`model/cache/<id>_collision.json`), and Bullet `btCompoundShape` synthesis.
 - [`src/physics/SurfaceSystem.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/SurfaceSystem.h) & [`SurfaceSystem.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/SurfaceSystem.cpp): Defines the 6 road surfaces (`DryAsphalt` $\mu=1.00$, `WetAsphalt` $\mu=0.68$, `Gravel` $\mu=0.54$, `Ice` $\mu=0.18$, `Grass` $\mu=0.42$, `RumbleStrip` $\mu=0.88$) with friction, rolling-resistance, cornering-stiffness, and procedural roughness parameters. Maps Bullet collider `userIndex` handles to surface properties.
-- [`src/physics/PhysicsWorld.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/PhysicsWorld.h) & [`PhysicsWorld.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/PhysicsWorld.cpp): Owns `btDiscreteDynamicsWorld`, fixed `120 Hz` (`fixedDt = 1/120 s`, `maxSubSteps = 12`) accumulator loop (`updateFrame`, `stepFixed`), the Proving Ground track layout (`buildProvingGround`), and the 7 teleport spawn presets (`getProvingGroundPresets`).
+- [`src/physics/PhysicsWorld.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/PhysicsWorld.h) & [`PhysicsWorld.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/PhysicsWorld.cpp): Owns `btDiscreteDynamicsWorld`, fixed `120 Hz` (`fixedDt = 1/120 s`, `maxSubSteps = 12`) accumulator loop (`updateFrame`, `stepFixed`), the Proving Ground track layout (`buildProvingGround`), and the 7 teleport spawn presets (`getProvingGroundPresets`). Supports switching vehicles with model-derived collision shapes.
 
 ### `src/vehicle/` — 6-DOF Vehicle Dynamics Subsystems
 - [`src/vehicle/VehicleConfig.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleConfig.h): `VehicleConfig` struct and `createDefaultVehicleConfig()` (`mass = 1500 kg`, `wheelbase = 2.68 m`, `trackWidth = 1.58 m`, `frontWeightDistribution = 0.52`, `wheelRadius = 0.32 m`, `wheelInertia = 1.15 kg·m²`, `frontSpringStiffness = 35000 N/m`, `rearSpringStiffness = 32500 N/m`, `idleRpm = 850`, `maxRpm = 7000`, 6-speed + R + N gear ratios, `finalDriveRatio = 3.96`, `tireFrictionCoeff = 1.15`, `dragCoefficient = 0.31`, `frontalArea = 2.15 m²`).
@@ -110,11 +112,21 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 5. **Chase Camera (`CameraMode::Follow`) Heading Damping:**
    - `CameraControllerGL::update()` damps the horizontal forward direction vector (`m_smoothedForward`) and vertical height (`m_smoothedHeight`) around the vehicle's interpolated position `pos` rather than lerping `m_position` in world space. This prevents steady-state camera distance lag at high speed (`CamDist` remains `6.61 m` at all speeds).
 
+6. **Model-Derived Collision Geometry & Full 10-Hull Chassis/Wheel Alignment:**
+   - Raw glTF mesh vertices extracted from Blender models have their origin at ground level $(0,0,0)$ and may include complex scene graph parent node hierarchies (armatures, collections, and scale factors).
+   - In `ModelLoaderGLB.cpp`, all nodes are resolved via `cgltf_node_transform_world(node, worldMatrix)`, ensuring subparts with ancestor scales (such as bumper honeycombs and windshield wipers) are placed in exact sub-centimeter positions rather than floating off in space.
+   - Wheel assemblies are extracted into dedicated tight wheel collision hulls (`WheelFL_Hull`, `WheelFR_Hull`, `WheelRL_Hull`, `WheelRR_Hull`), each filtering outlier hub links to form true cylindrical $0.30\text{ m}$ radius, $0.24\text{ m}$ width wheel colliders.
+   - 100% of the imported car geometry is converted into 10 watertight convex collision hulls: 6 chassis body pieces (`FrontBumper_Hull`, `HoodFenders_Hull`, `Greenhouse_Hull`, `ChassisTub_Hull`, `RearDeck_Hull`, `RearBumper_Hull`) plus 4 dedicated wheel/tire hulls.
+   - In `VehicleCollisionGenerator::generateFromModel()`, the raw chassis meshes are transformed into **Chassis Physics Space** via `Mat4::fromTranslation(model.chassisCenterOffset)` before volumetric convex decomposition.
+   - This ensures child hulls in Bullet's `btCompoundShape` align 1:1 with the visual car body at $(T_{\text{chassis}} \times P_{\text{piece}})$, eliminating floating collision cages and bumper phasing.
+   - Continuous Collision Detection (`setCcdMotionThreshold(0.08f)` and `setCcdSweptSphereRadius(0.20f)`) is active on `m_rigidBody`, preventing high-speed obstacle tunneling.
+   - **Collision Bouncing Elimination:** Bullet solver is tuned with `m_splitImpulse = 1` (position-only contact push-out without velocity addition), `m_globalCfm = 0.0f` (eliminates spongy penetration), and chassis restitution $0.02f$. Suspension raycasts in `VehicleDynamics` skip non-driveable obstacle walls (`surfaceSystem.isColliderDriveable`), and bump-stop penetration is clamped to avoid upward load spikes on impact.
+
 ---
 
-## 6. Verified Physical Benchmarks (`21 / 21` Suites Passing)
+## 6. Verified Physical Benchmarks (`24 / 24` Suites Passing)
 
-Any future code change must keep all 21 suites in `.\build\Release\TorqueLabNativeTests.exe` green:
+Any future code change must keep all 24 suites in `.\build\Release\TorqueLabNativeTests.exe` green:
 
 - **Static Equilibrium (`Test A`):** $\sum F_z = 14715.0\text{ N}$ ($0.000\%$ error vs $mg = 1500 \times 9.81 = 14715.0\text{ N}$), ride height $= 0.4910\text{ m}$, suspension compression $= 0.1093\text{ m}$.
 - **Full-Throttle Launch (`Test B` & `--diag`):**
@@ -127,3 +139,43 @@ Any future code change must keep all 21 suites in `.\build\Release\TorqueLabNati
 - **Controlled Force & Scale Sanity (`Controlled 1–3`):**
   - $F = 5800\text{ N}$ on $m = 1500\text{ kg}$ $\implies a = 3.868\text{ m/s}^2$ (expected $3.867\text{ m/s}^2$).
   - Constant $v = 25.00\text{ m/s}$ for $t = 2.000\text{ s}$ $\implies \Delta Z = 50.002\text{ m}$ (expected $50.000\text{ m}$).
+
+---
+
+## 7. Vehicle Configuration, Materials & Collision System Architecture
+
+1. **Decoupled Vehicle Configuration System (`VehicleConfig.h` / `VehicleConfig.cpp`):**
+   - Pure physical parameters (`mass`, `wheelbase`, `trackWidth`, `inertiaTensor`, spring/damper rates, drivetrain, brakes) are decoupled from rendering models.
+   - Per-vehicle JSON specifications stored in `model/bmw_m4_vehicle.json` and `model/procedural_coupe_vehicle.json`. Supports runtime serialization (`saveVehicleConfigToJson`) and deserialization (`loadVehicleConfigFromJson`).
+   - Seamless live vehicle switching via `PhysicsWorld::switchVehicle(newConfig)` with zero memory leaks, full Bullet rigid body reconstruction, and suspension ray synchronization.
+
+2. **Accurate Visual Appearance, Materials & Decal Composition:**
+   - The Blender model is an **Alpine White BMW M4 with authentic BMW M tri-color racing stripes**, carbon fiber trim, chrome highlights, transparent tinted glass, and ruby red brake lights.
+   - 4 packed textures extracted from `.blend` file into `model/textures/`:
+     - `Front_Bumper_Text.png` (2048x2048 RGBA decal on front bumper)
+     - `Front_Hodd_Text.png` (2048x2048 RGBA decal on hood)
+     - `Stripes_Wings.png` (2048x2048 RGBA M-stripes on front fenders / doors)
+     - `600px-BMW.svg.png` (600x600 RGBA BMW roundel emblem on wheels and hood)
+   - Fragment shader (`phong_shadow.frag`) composites decal textures over Alpine White base paint (`#DCE0E6`) via `albedo = mix(albedo, texColor.rgb, texColor.a)`.
+
+3. **Ground Clearance & Axis Alignment:**
+   - Model origin $(0,0,0)$ in `BMW_M4.glb` sits at ground level under the tire contact patches.
+   - Offset `visualOffset = Vec3{0.0, -0.477, -0.1475}` aligns the model's chassis floor with exact real-world ground clearance ($12.7\text{ cm}$), sitting flush on the road with wheel hubs centered in the wheel arches.
+
+4. **Tapered Compound Collision Hull (`CollisionShapeType::TaperedCompound`):**
+   - Replaced oversized rectangular collision box with an aerodynamic tapered compound shape in `VehicleBody.cpp`:
+     - **Central Passenger Tub:** $Z \in [-0.40 \cdot hz, +0.40 \cdot hz]$, width $2 \cdot hx$ ($1.84\text{ m}$)
+     - **Tapered Front Nose & Curved Bumper (`btConvexHullShape`):** Tapers from $1.75\text{ m}$ down to $1.44\text{ m}$ at bumper corners with chamfered apex tip, eliminating the phantom 25–30 cm corner collision gap!
+     - **Tapered Rear Bumper (`btConvexHullShape`):** Tapers to $1.55\text{ m}$ at rear bumper tip.
+     - **Upper Cabin Greenhouse:** Half-extents matching glass cabin envelope.
+   - Real-time 3D wireframe visualization toggle in `DebugOverlayGL` (`showCollisionWireframe`) renders the exact Bullet collision boundary cage in emerald green.
+
+5. **Generic Model-Derived Shape-Accurate Vehicle Collision Pipeline (`VehicleCollisionGenerator`):**
+   - Replaces hardcoded box configurations with a generic automatic collision generation pipeline derived directly from loaded 3D vehicle models (GLTF/GLB or procedural meshes).
+   - Dynamic moving rigid bodies in Bullet strictly require convex shapes or compound shapes of convex hulls (`btCompoundShape` with `btConvexHullShape` children). Concave triangle meshes (`btBvhTriangleMeshShape`) are static-only in Bullet and fail on dynamic bodies.
+   - The generator performs spatial voxel decimation from high-density visual vertices (e.g. 743k triangles) down to uniform surface vertices in $<5\text{ ms}$, then executes volumetric approximate convex decomposition (V-HACD) or spatial topological clustering via `btConvexHullComputer`.
+   - Automatically decomposes the car into 10 shape-accurate watertight convex hulls: 6 chassis body pieces (`FrontBumper_Hull` following the curved nose contour, `HoodFenders_Hull`, `Greenhouse_Hull` following the authentic A-pillars and roofline, `ChassisTub_Hull`, `RearDeck_Hull`, `RearBumper_Hull`) plus 4 dedicated tire/wheel hulls (`WheelFL_Hull`, `WheelFR_Hull`, `WheelRL_Hull`, `WheelRR_Hull`). 100% of the imported model geometry is captured into physical collision.
+   - Separates wheel geometry to automatically derive wheel centers, wheel radius ($0.30\text{ m}$), wheel width ($0.24\text{ m}$), wheelbase ($2.76\text{ m}$), track width ($1.58\text{ m}$), and ground clearance ($10.0\text{ cm}$) directly from 3D mesh coordinates. Outlier vertices in wheel asset origins are filtered from the chassis collision mesh, eliminating pointed front/rear bumper protrusion artifacts ($Z$ strictly spans $[-2.265, +2.330]\text{ m}$, total length $4.595\text{ m}$).
+   - Automatically serializes and caches generated convex hulls to `model/cache/<vehicle_id>_collision.json` (cache version 5) for instantaneous subsequent loads ($<1\text{ ms}$).
+   - 3D Wireframe Overlay (`DebugOverlayGL`) renders each convex child hull with distinct vibrant colors (emerald, cyan, amber, purple, pink, blue, lime, red) for clear visual inspection.
+   - Real-time diagnostic telemetry and manual re-generation buttons are integrated into `ImGuiDashboard`.

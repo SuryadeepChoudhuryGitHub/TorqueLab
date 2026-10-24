@@ -27,6 +27,7 @@ namespace torquelab {
 class VehicleRendererGL {
 public:
     VehicleRendererGL() = default;
+    ~VehicleRendererGL();
 
     void init(const VehicleConfig& config);
     void syncWithVehicle(const VehicleDynamics& vehicle, double alpha);

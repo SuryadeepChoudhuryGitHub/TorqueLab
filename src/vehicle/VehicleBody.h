@@ -12,6 +12,7 @@
 #include <memory>
 #include <vector>
 #include <btBulletDynamicsCommon.h>
+#include "physics/CollisionMeshGeometry.h"
 #include "physics/Math3D.h"
 #include "vehicle/VehicleConfig.h"
 
@@ -28,7 +29,8 @@ public:
         btDiscreteDynamicsWorld* world,
         const VehicleConfig& config,
         const Vec3& initialPosition,
-        const Quat& initialRotation = quatIdentity()
+        const Quat& initialRotation = quatIdentity(),
+        const GeneratedVehicleCollision* generatedCollision = nullptr
     );
     ~VehicleBody();
 
@@ -83,7 +85,19 @@ public:
     /** Resets the chassis pose (in geometric origin coordinates) and zeroes all velocities/forces. */
     void resetPose(const Vec3& position, const Quat& rotation = quatIdentity());
 
+    /**
+     * Replaces the active collision shape in-place without destroying the vehicle dynamics state.
+     * Safely unregisters the rigid body from Bullet, replaces the compound shape & child hulls,
+     * recalculates mass properties and inertia tensor, updates broadphase AABBs, and re-registers.
+     */
+    bool replaceCollisionShape(
+        const GeneratedVehicleCollision* newCollision,
+        const VehicleConfig& config
+    );
+
     btRigidBody* getRigidBody() const { return m_rigidBody.get(); }
+    const btCompoundShape* getCompoundShape() const { return m_compoundShape.get(); }
+    const GeneratedVehicleCollision& getGeneratedCollision() const { return m_collision; }
 
     Vec3 accelerationWorld{0.0, 0.0, 0.0};
     Vec3 accelerationLocal{0.0, 0.0, 0.0};
@@ -94,8 +108,8 @@ private:
     Vec3 m_localCom{0.0, 0.0, 0.0};
     Vec3 m_prevLinearVelocity{0.0, 0.0, 0.0};
 
-    std::unique_ptr<btBoxShape> m_lowerBoxShape;
-    std::unique_ptr<btBoxShape> m_cabinBoxShape;
+    GeneratedVehicleCollision m_collision;
+    std::vector<std::unique_ptr<btCollisionShape>> m_subShapes;
     std::unique_ptr<btCompoundShape> m_compoundShape;
     std::unique_ptr<btDefaultMotionState> m_motionState;
     std::unique_ptr<btRigidBody> m_rigidBody;

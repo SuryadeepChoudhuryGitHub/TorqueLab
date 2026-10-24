@@ -93,7 +93,8 @@ public:
         SurfaceSystem* surfaceSystem,
         const VehicleConfig& initialConfig = createDefaultVehicleConfig(),
         const Vec3& spawnPosition = Vec3{0.0, 0.55, 0.0},
-        const Quat& spawnRotation = quatIdentity()
+        const Quat& spawnRotation = quatIdentity(),
+        const GeneratedVehicleCollision* collision = nullptr
     );
 
     /** Captures current chassis and wheel transforms before stepping for smooth render interpolation. */

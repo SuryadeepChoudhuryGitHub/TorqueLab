@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include "physics/VehicleCollisionGenerator.h"
 #include "vehicle/Drivetrain.h"
 
 namespace torquelab {
@@ -63,7 +64,8 @@ bool Application::init(int width, int height, bool visible) {
     m_imguiInitialized = true;
 
     // 2. Initialize Physics World & Settle Initial Equilibrium
-    const VehicleConfig config = createDefaultVehicleConfig();
+    VehicleConfig config = createBmwM4Config();
+    loadVehicleConfigFromJson(config, "model/bmw_m4_vehicle.json");
     m_physicsWorld = std::make_unique<PhysicsWorld>(config, true);
     for (int i = 0; i < 45; ++i) {
         m_physicsWorld->stepFixed();
@@ -84,6 +86,21 @@ bool Application::init(int width, int height, bool visible) {
     m_trackRenderer.init(m_physicsWorld->trackElements);
     m_vehicleRenderer.init(config);
     m_debugOverlay.init();
+
+    // 3b. Automatic Model-Derived Collision Generation from Imported 3D Geometry
+    CollisionPipelineSettings colSettings{};
+    VehicleCollisionGenerator::generateFromModel(
+        m_vehicleRenderer.getImportedModel(),
+        colSettings,
+        m_bmwCollision
+    );
+    if (m_bmwCollision.geometryDerivedSuccessfully) {
+        VehicleCollisionGenerator::applyDerivedGeometryToConfig(m_bmwCollision, config);
+    }
+    m_physicsWorld->switchVehicle(config, &m_bmwCollision);
+    for (int i = 0; i < 45; ++i) {
+        m_physicsWorld->stepFixed();
+    }
 
     const float aspect = static_cast<float>(m_fbWidth) / static_cast<float>(std::max(1, m_fbHeight));
     m_cameraController = std::make_unique<CameraControllerGL>(aspect);
@@ -126,10 +143,60 @@ bool Application::init(int width, int height, bool visible) {
             runValidationSuite();
         },
         [this](bool enable) {
-            m_vehicleRenderer.setUseImportedModel(enable);
+            switchActiveVehicle(enable ? "bmw_m4" : "procedural_coupe");
         },
         [this]() {
             m_vehicleRenderer.toggleVisualDebug();
+        },
+        [this](const std::string& vehicleId) {
+            switchActiveVehicle(vehicleId);
+        },
+        [this]() {
+            const auto& cfg = m_physicsWorld->vehicle->config;
+            const std::string path = (cfg.id == "bmw_m4") ? "model/bmw_m4_vehicle.json" : "model/procedural_coupe_vehicle.json";
+            saveVehicleConfigToJson(cfg, path);
+            m_dashboard->showValidationReport("Saved vehicle configuration to " + path, true);
+        },
+        [this]() {
+            auto& cfg = m_physicsWorld->vehicle->config;
+            const std::string path = (cfg.id == "bmw_m4") ? "model/bmw_m4_vehicle.json" : "model/procedural_coupe_vehicle.json";
+            if (loadVehicleConfigFromJson(cfg, path)) {
+                const auto* col = (cfg.id == "bmw_m4") ? &m_bmwCollision : nullptr;
+                m_physicsWorld->switchVehicle(cfg, col);
+                for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
+                m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
+                m_dashboard->showValidationReport("Reloaded vehicle configuration from " + path, true);
+            }
+        },
+        [this]() {
+            const bool isBmw = (m_physicsWorld->vehicle->config.id == "bmw_m4");
+            VehicleConfig cfg = isBmw ? createBmwM4Config() : createProceduralCoupeConfig();
+            const auto* col = isBmw ? &m_bmwCollision : nullptr;
+            m_physicsWorld->switchVehicle(cfg, col);
+            for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
+            m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
+            m_dashboard->showValidationReport("Reset vehicle parameters to defaults", true);
+        },
+        [this](bool enable) {
+            m_debugOverlay.showCollisionWireframe = enable;
+        },
+        [this](CollisionAlgorithmStrategy strategy) {
+            CollisionPipelineSettings colSettings{};
+            colSettings.strategy = strategy;
+            colSettings.enableCaching = false;
+            VehicleCollisionGenerator::generateFromModel(
+                m_vehicleRenderer.getImportedModel(),
+                colSettings,
+                m_bmwCollision
+            );
+            auto cfg = m_physicsWorld->vehicle->config;
+            if (m_bmwCollision.geometryDerivedSuccessfully) {
+                VehicleCollisionGenerator::applyDerivedGeometryToConfig(m_bmwCollision, cfg);
+            }
+            m_physicsWorld->switchVehicle(cfg, &m_bmwCollision);
+            for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
+            m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
+            m_dashboard->showValidationReport("Regenerated collision: " + std::string(getStrategyName(strategy)), true);
         }
     });
     m_dashboard->applyTheme();
@@ -175,7 +242,8 @@ bool Application::init(int width, int height, bool visible) {
             }
         },
         [this]() {
-            m_vehicleRenderer.setUseImportedModel(!m_vehicleRenderer.isUsingImportedModel());
+            const bool isBmw = (m_physicsWorld->vehicle->config.id == "bmw_m4");
+            switchActiveVehicle(isBmw ? "procedural_coupe" : "bmw_m4");
         },
         [this]() {
             m_vehicleRenderer.toggleVisualDebug();
@@ -193,6 +261,28 @@ bool Application::init(int width, int height, bool visible) {
     (void)glfwJoystickIsGamepad(GLFW_JOYSTICK_1);
 
     return true;
+}
+
+void Application::switchActiveVehicle(const std::string& vehicleId) {
+    if (vehicleId == "bmw_m4") {
+        VehicleConfig bmw = createBmwM4Config();
+        loadVehicleConfigFromJson(bmw, "model/bmw_m4_vehicle.json");
+        const GeneratedVehicleCollision* colPtr = nullptr;
+        if (m_bmwCollision.geometryDerivedSuccessfully && !m_bmwCollision.pieces.empty()) {
+            VehicleCollisionGenerator::applyDerivedGeometryToConfig(m_bmwCollision, bmw);
+            colPtr = &m_bmwCollision;
+        }
+        m_physicsWorld->switchVehicle(bmw, colPtr);
+        m_vehicleRenderer.setUseImportedModel(true);
+    } else {
+        VehicleConfig proc = createProceduralCoupeConfig();
+        loadVehicleConfigFromJson(proc, "model/procedural_coupe_vehicle.json");
+        m_physicsWorld->switchVehicle(proc, nullptr);
+        m_vehicleRenderer.setUseImportedModel(false);
+    }
+    for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
+    m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
+    m_cameraController->snapToVehicle(*m_physicsWorld->vehicle);
 }
 
 std::string Application::runValidationSuite() {
@@ -266,6 +356,18 @@ int Application::run(int maxFrames) {
         m_cameraController->update(*m_physicsWorld->vehicle, alpha, frameDt);
 
         if (maxFrames == 600 && frameCount == 0) {
+            const auto colDiag = m_physicsWorld->getCollisionDiagnostics(m_debugOverlay.showCollisionWireframe);
+            std::printf("[Collision Lifecycle] Active Vehicle: %s | RigidBody: %p (idx=%d) | Shape: %s (%d hulls) | World Collision Objs: %d (Active: %d) | Legacy Stale: %s | Lifecycle Clean: %s\n",
+                        colDiag.vehicleId.c_str(),
+                        static_cast<const void*>(colDiag.rigidBodyPtr),
+                        colDiag.rigidBodyUserIndex,
+                        colDiag.collisionShapeTypeName.c_str(),
+                        colDiag.childShapeCount,
+                        colDiag.totalWorldCollisionObjects,
+                        colDiag.activeVehicleCollisionObjects,
+                        colDiag.legacyPlaceholderRegistered ? "YES (ERROR)" : "NO",
+                        colDiag.colliderReplacementSucceeded ? "YES (CLEAN)" : "NO");
+
             std::printf("[GL Info] Vendor: %s | Renderer: %s | Version: %s\n",
                         reinterpret_cast<const char*>(glGetString(GL_VENDOR)),
                         reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
@@ -308,7 +410,8 @@ int Application::run(int maxFrames) {
             m_vehicleRenderer.isUsingImportedModel(),
             m_vehicleRenderer.hasImportedModel(),
             m_vehicleRenderer.getActiveModelName(),
-            m_vehicleRenderer.isVisualDebugEnabled()
+            m_vehicleRenderer.isVisualDebugEnabled(),
+            m_debugOverlay.showCollisionWireframe
         );
 
         ImGui::Render();

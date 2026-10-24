@@ -39,6 +39,7 @@ public:
     );
 
     bool enabled{true};
+    bool showCollisionWireframe{true};
 
 private:
     struct LineVertex {
@@ -49,6 +50,9 @@ private:
     void addLine(const Vec3& a, const Vec3& b, const Color3& color, std::vector<LineVertex>& buffer);
     void addArrow(const Vec3& origin, const Vec3& dir, double length, const Color3& color, std::vector<LineVertex>& buffer);
     void addCircleXZ(const Vec3& center, double radius, const Color3& color, std::vector<LineVertex>& buffer, int segments = 32);
+    void addBoxWireframe(const btVector3& halfExtents, const btTransform& worldTrans, const Color3& color, std::vector<LineVertex>& buffer);
+    void addHullWireframe(const btConvexHullShape* hull, const btTransform& worldTrans, const Color3& color, std::vector<LineVertex>& buffer);
+    void addCompoundWireframe(const btRigidBody* body, const btCompoundShape* compound, const Color3& color, std::vector<LineVertex>& buffer);
 
     GLuint m_lineVao{0};
     GLuint m_lineVbo{0};

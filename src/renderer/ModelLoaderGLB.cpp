@@ -2,6 +2,7 @@
 #include "cgltf.h"
 
 #include "renderer/ModelLoaderGLB.h"
+#include "renderer/Texture2D.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace torquelab {
@@ -40,13 +42,49 @@ unsigned int parseHexColor(const std::string& hexStr, unsigned int defaultHex = 
 
 // Simple key-value JSON reader for manifest configuration without bulky external dependencies
 struct ManifestConfig {
-    Vec3 chassisCenterOffset{0.0, 0.0, 0.0};
+    Vec3 chassisCenterOffset{0.0, -0.477, -0.1475};
+    bool hasExplicitChassisCenterOffset{false};
     std::unordered_set<std::string> ignoreNodes;
     std::unordered_map<std::string, ModelPartRole> roleOverrides;
     std::unordered_map<std::string, MaterialProps> materialOverrides;
+    std::unordered_map<std::string, std::string> textureMap;
     std::unordered_map<std::string, bool> isBrakeLightMap;
     std::unordered_map<std::string, bool> isTransparentMap;
 };
+
+std::string extractJsonString(const std::string& line, const std::string& key) {
+    const auto kPos = line.find("\"" + key + "\"");
+    if (kPos == std::string::npos) return "";
+    const auto colon = line.find(':', kPos);
+    if (colon == std::string::npos) return "";
+    const auto qA = line.find('\"', colon);
+    if (qA == std::string::npos) return "";
+    const auto qB = line.find('\"', qA + 1);
+    if (qB == std::string::npos) return "";
+    return line.substr(qA + 1, qB - qA - 1);
+}
+
+float extractJsonFloat(const std::string& line, const std::string& key, float defVal) {
+    const auto kPos = line.find("\"" + key + "\"");
+    if (kPos == std::string::npos) return defVal;
+    const auto colon = line.find(':', kPos);
+    if (colon == std::string::npos) return defVal;
+    try {
+        size_t idx = 0;
+        return std::stof(line.substr(colon + 1), &idx);
+    } catch (...) {
+        return defVal;
+    }
+}
+
+bool extractJsonBool(const std::string& line, const std::string& key) {
+    const auto kPos = line.find("\"" + key + "\"");
+    if (kPos == std::string::npos) return false;
+    const auto colon = line.find(':', kPos);
+    if (colon == std::string::npos) return false;
+    const std::string sub = line.substr(colon + 1, 12);
+    return sub.find("true") != std::string::npos;
+}
 
 ModelPartRole parseRoleString(const std::string& str) {
     const std::string s = toLower(str);
@@ -72,10 +110,8 @@ ManifestConfig loadManifest(const std::string& manifestPath) {
 
     std::string line;
     std::string currentSection;
-    std::string currentMatKey;
 
     while (std::getline(file, line)) {
-        // Trim leading/trailing whitespace
         const auto start = line.find_first_not_of(" \t\r\n");
         if (start == std::string::npos) continue;
         const auto end = line.find_last_not_of(" \t\r\n");
@@ -95,7 +131,7 @@ ManifestConfig loadManifest(const std::string& manifestPath) {
         }
         if (trimmed.find("\"chassis_center_offset\"") != std::string::npos) {
             const auto openBracket = trimmed.find('[');
-            const auto closeBracket = trimmed.find(']');
+            const auto closeBracket = trimmed.find(']', openBracket);
             if (openBracket != std::string::npos && closeBracket != std::string::npos) {
                 std::stringstream ss(trimmed.substr(openBracket + 1, closeBracket - openBracket - 1));
                 std::string sx, sy, sz;
@@ -104,6 +140,7 @@ ManifestConfig loadManifest(const std::string& manifestPath) {
                         cfg.chassisCenterOffset.x = std::stod(sx);
                         cfg.chassisCenterOffset.y = std::stod(sy);
                         cfg.chassisCenterOffset.z = std::stod(sz);
+                        cfg.hasExplicitChassisCenterOffset = true;
                     } catch (...) {}
                 }
             }
@@ -138,55 +175,46 @@ ManifestConfig loadManifest(const std::string& manifestPath) {
                 currentSection.clear();
             }
         } else if (currentSection == "materials") {
-            // Material entry parsing
             const auto q1 = trimmed.find('\"');
-            if (q1 != std::string::npos && trimmed.find('{') != std::string::npos) {
+            if (q1 != std::string::npos) {
                 const auto q2 = trimmed.find('\"', q1 + 1);
-                if (q2 != std::string::npos) {
-                    currentMatKey = trimmed.substr(q1 + 1, q2 - q1 - 1);
-                    cfg.materialOverrides[currentMatKey] = MaterialProps{};
+                const auto col = trimmed.find(':', q2);
+                if (q2 != std::string::npos && col != std::string::npos) {
+                    const std::string matKey = trimmed.substr(q1 + 1, q2 - q1 - 1);
+                    const std::string rest = trimmed.substr(col + 1);
+
+                    MaterialProps mat{};
+                    mat.roughness = extractJsonFloat(rest, "roughness", 0.5f);
+                    mat.metalness = extractJsonFloat(rest, "metalness", 0.1f);
+                    mat.opacity = extractJsonFloat(rest, "opacity", 1.0f);
+
+                    const std::string baseHex = extractJsonString(rest, "base_color_hex");
+                    if (!baseHex.empty()) {
+                        mat.baseColor = Color3::fromHex(parseHexColor(baseHex));
+                    }
+                    const std::string emissiveHex = extractJsonString(rest, "emissive_color_hex");
+                    if (!emissiveHex.empty()) {
+                        mat.emissiveColor = Color3::fromHex(parseHexColor(emissiveHex));
+                        mat.emissiveIntensity = extractJsonFloat(rest, "emissive_intensity", 2.0f);
+                    }
+
+                    if (extractJsonBool(rest, "transparent") || mat.opacity < 0.99f) {
+                        cfg.isTransparentMap[matKey] = true;
+                    }
+                    if (extractJsonBool(rest, "is_brake_light")) {
+                        cfg.isBrakeLightMap[matKey] = true;
+                    }
+
+                    const std::string texStr = extractJsonString(rest, "texture");
+                    if (!texStr.empty()) {
+                        cfg.textureMap[matKey] = texStr;
+                    }
+
+                    cfg.materialOverrides[matKey] = mat;
                 }
             }
-
-            if (!currentMatKey.empty()) {
-                auto& mat = cfg.materialOverrides[currentMatKey];
-                if (trimmed.find("\"roughness\"") != std::string::npos) {
-                    const auto col = trimmed.find(':');
-                    try { mat.roughness = std::stof(trimmed.substr(col + 1)); } catch (...) {}
-                }
-                if (trimmed.find("\"metalness\"") != std::string::npos) {
-                    const auto col = trimmed.find(':');
-                    try { mat.metalness = std::stof(trimmed.substr(col + 1)); } catch (...) {}
-                }
-                if (trimmed.find("\"opacity\"") != std::string::npos) {
-                    const auto col = trimmed.find(':');
-                    try { mat.opacity = std::stof(trimmed.substr(col + 1)); } catch (...) {}
-                }
-                if (trimmed.find("\"transparent\"") != std::string::npos && trimmed.find("true") != std::string::npos) {
-                    cfg.isTransparentMap[currentMatKey] = true;
-                }
-                if (trimmed.find("\"is_brake_light\"") != std::string::npos && trimmed.find("true") != std::string::npos) {
-                    cfg.isBrakeLightMap[currentMatKey] = true;
-                }
-                if (trimmed.find("\"base_color_hex\"") != std::string::npos) {
-                    const auto qA = trimmed.find('\"', trimmed.find(':'));
-                    const auto qB = (qA != std::string::npos) ? trimmed.find('\"', qA + 1) : std::string::npos;
-                    if (qB != std::string::npos) {
-                        mat.baseColor = Color3::fromHex(parseHexColor(trimmed.substr(qA + 1, qB - qA - 1)));
-                    }
-                }
-                if (trimmed.find("\"emissive_color_hex\"") != std::string::npos) {
-                    const auto qA = trimmed.find('\"', trimmed.find(':'));
-                    const auto qB = (qA != std::string::npos) ? trimmed.find('\"', qA + 1) : std::string::npos;
-                    if (qB != std::string::npos) {
-                        mat.emissiveColor = Color3::fromHex(parseHexColor(trimmed.substr(qA + 1, qB - qA - 1)));
-                        mat.emissiveIntensity = 2.0f;
-                    }
-                }
-            }
-
             if (trimmed.find('}') != std::string::npos && trimmed.find('{') == std::string::npos) {
-                currentMatKey.clear();
+                currentSection.clear();
             }
         }
     }
@@ -245,14 +273,18 @@ bool ModelLoaderGLB::loadFromFile(
     if (resolvedManifest.empty()) {
         const std::string candidate1 = outModel.filePath.substr(0, outModel.filePath.find_last_of('.')) + "_manifest.json";
         const std::string candidate2 = resolveModelPath("BMW_M4_manifest.json");
-        if (std::filesystem::exists(candidate1)) resolvedManifest = candidate1;
-        else if (std::filesystem::exists(candidate2)) resolvedManifest = candidate2;
+        if (std::filesystem::exists(candidate1)) {
+            resolvedManifest = candidate1;
+        } else if (outModel.filePath.find("BMW_M4") != std::string::npos && std::filesystem::exists(candidate2)) {
+            resolvedManifest = candidate2;
+        }
     }
     ManifestConfig manifest = loadManifest(resolvedManifest);
     outModel.chassisCenterOffset = manifest.chassisCenterOffset;
 
     // Temporary list of all loaded parts before grouping
     std::vector<LoadedModelPart> rawParts;
+    std::unordered_map<std::string, GLuint> textureCache;
 
     outModel.aabbMin = Vec3{+1e9, +1e9, +1e9};
     outModel.aabbMax = Vec3{-1e9, -1e9, -1e9};
@@ -273,27 +305,15 @@ bool ModelLoaderGLB::loadFromFile(
             continue;
         }
 
-        // Extract Local TRS Transform
-        Vec3 localPos{0.0, 0.0, 0.0};
-        Quat localRot{0.0, 0.0, 0.0, 1.0};
-        Vec3 localScale{1.0, 1.0, 1.0};
-        Mat4 localBind = Mat4::identity();
+        // Extract Accumulated Scene World Transform (resolves parent node hierarchies, collections, armatures)
+        cgltf_float worldMatrix[16];
+        cgltf_node_transform_world(node, worldMatrix);
 
-        if (node->has_matrix) {
-            for (int i = 0; i < 16; ++i) localBind.m[i] = node->matrix[i];
-            localPos = Vec3{node->matrix[12], node->matrix[13], node->matrix[14]};
-        } else {
-            if (node->has_translation) {
-                localPos = Vec3{node->translation[0], node->translation[1], node->translation[2]};
-            }
-            if (node->has_rotation) {
-                localRot = Quat{node->rotation[0], node->rotation[1], node->rotation[2], node->rotation[3]};
-            }
-            if (node->has_scale) {
-                localScale = Vec3{node->scale[0], node->scale[1], node->scale[2]};
-            }
-            localBind = Mat4::fromTRS(localPos, localRot, localScale);
-        }
+        Mat4 localBind;
+        for (int i = 0; i < 16; ++i) localBind.m[i] = worldMatrix[i];
+        const Vec3 localPos{localBind.m[12], localBind.m[13], localBind.m[14]};
+        const Quat localRot = quatIdentity();
+        const Vec3 localScale{1.0, 1.0, 1.0};
 
         // Process primitives inside mesh
         const cgltf_mesh* mesh = node->mesh;
@@ -370,6 +390,13 @@ bool ModelLoaderGLB::loadFromFile(
             Mesh glMesh;
             glMesh.upload(vertices, indices);
 
+            RawMeshGeometry cpuGeom;
+            cpuGeom.vertices.reserve(vertices.size());
+            for (const auto& vt : vertices) {
+                cpuGeom.addVertex(Vec3{vt.px, vt.py, vt.pz});
+            }
+            cpuGeom.indices = indices;
+
             outModel.totalVertices += vertices.size();
             outModel.totalTriangles += indices.size() / 3;
 
@@ -381,6 +408,9 @@ bool ModelLoaderGLB::loadFromFile(
 
             if (prim->material) {
                 matName = prim->material->name ? prim->material->name : "Material";
+                if (lowerName.find("rim") != std::string::npos || lowerName.find("tyre") != std::string::npos) {
+                    std::cout << "[MeshPrim] " << nodeName << " p=" << p << " mat=" << matName << " numVerts=" << vertexCount << std::endl;
+                }
                 if (prim->material->has_pbr_metallic_roughness) {
                     const auto& pbr = prim->material->pbr_metallic_roughness;
                     matProps.baseColor = Color3{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]};
@@ -406,9 +436,13 @@ bool ModelLoaderGLB::loadFromFile(
                     matProps.baseColor = ovr.baseColor;
                 }
                 if (ovr.opacity < 0.99f) matProps.opacity = ovr.opacity;
+                if (ovr.emissiveIntensity > 0.0f) {
+                    matProps.emissiveColor = ovr.emissiveColor;
+                    matProps.emissiveIntensity = ovr.emissiveIntensity;
+                }
             } else {
                 if (lowerMat.find("paint") != std::string::npos || lowerMat.find("body") != std::string::npos) {
-                    matProps.baseColor = Color3::fromHex(0x1e66f5); // BMW Estoril / Yas Marina Blue
+                    matProps.baseColor = Color3::fromHex(0xdce0e6); // Alpine White
                     matProps.metalness = 0.70f;
                     matProps.roughness = 0.22f;
                 } else if (lowerMat.find("glass") != std::string::npos || lowerMat.find("windscreen") != std::string::npos || lowerMat.find("window") != std::string::npos) {
@@ -450,34 +484,46 @@ bool ModelLoaderGLB::loadFromFile(
             if (manifest.isBrakeLightMap.count(matName)) isBrakeLight = manifest.isBrakeLightMap[matName];
             if (manifest.isTransparentMap.count(matName)) isTransparent = manifest.isTransparentMap[matName];
 
+            if (manifest.textureMap.count(matName)) {
+                const std::string texRel = manifest.textureMap.at(matName);
+                const std::string texPath = resolveModelPath(texRel);
+                auto it = textureCache.find(texPath);
+                if (it != textureCache.end()) {
+                    matProps.textureId = it->second;
+                } else {
+                    auto tex = std::make_unique<Texture2D>(Texture2D::loadFromFile(texPath, true));
+                    if (tex->isValid()) {
+                        matProps.textureId = tex->getId();
+                        textureCache[texPath] = tex->getId();
+                        outModel.loadedTextures.push_back(std::move(tex));
+                    }
+                }
+            }
+
             // Resolve Semantic Role
             ModelPartRole role = ModelPartRole::Chassis;
             if (manifest.roleOverrides.find(nodeName) != manifest.roleOverrides.end()) {
                 role = manifest.roleOverrides[nodeName];
             } else {
                 // Heuristic identification for arbitrary car models
-                const bool isWheelName = (lowerName.find("wheel") != std::string::npos ||
-                                          lowerName.find("tire") != std::string::npos ||
-                                          lowerName.find("tyre") != std::string::npos ||
-                                          lowerName.find("rim") != std::string::npos);
-
-                const bool isCaliperName = (lowerName.find("caliper") != std::string::npos);
-
-                if (isWheelName) {
+                if (lowerName.find("steer") != std::string::npos) {
+                    role = ModelPartRole::SteeringWheel;
+                } else if (lowerName.find("caliper") != std::string::npos) {
+                    if (localPos.z >= 0.0) {
+                        role = (localPos.x >= 0.0) ? ModelPartRole::BrakeCaliper_FL : ModelPartRole::BrakeCaliper_FR;
+                    } else {
+                        role = (localPos.x >= 0.0) ? ModelPartRole::BrakeCaliper_RL : ModelPartRole::BrakeCaliper_RR;
+                    }
+                } else if (lowerName.find("wheel") != std::string::npos ||
+                           lowerName.find("tire") != std::string::npos ||
+                           lowerName.find("tyre") != std::string::npos ||
+                           lowerName.find("rim") != std::string::npos) {
                     // Match spatial quadrant based on local position
                     if (localPos.z >= 0.0) {
                         role = (localPos.x >= 0.0) ? ModelPartRole::Wheel_FL : ModelPartRole::Wheel_FR;
                     } else {
                         role = (localPos.x >= 0.0) ? ModelPartRole::Wheel_RL : ModelPartRole::Wheel_RR;
                     }
-                } else if (isCaliperName) {
-                    if (localPos.z >= 0.0) {
-                        role = (localPos.x >= 0.0) ? ModelPartRole::BrakeCaliper_FL : ModelPartRole::BrakeCaliper_FR;
-                    } else {
-                        role = (localPos.x >= 0.0) ? ModelPartRole::BrakeCaliper_RL : ModelPartRole::BrakeCaliper_RR;
-                    }
-                } else if (lowerName.find("steer") != std::string::npos) {
-                    role = ModelPartRole::SteeringWheel;
                 }
             }
 
@@ -486,6 +532,7 @@ bool ModelLoaderGLB::loadFromFile(
             LoadedModelPart part{};
             part.name = nodeName;
             part.mesh = std::move(glMesh);
+            part.cpuGeometry = std::move(cpuGeom);
             part.localBindMatrix = localBind;
             part.localPosition = localPos;
             part.localRotation = localRot;
@@ -508,7 +555,7 @@ bool ModelLoaderGLB::loadFromFile(
         return false;
     }
 
-    // Compute wheel pivot centers per quadrant from assigned wheel parts
+    // Compute wheel pivot centers per quadrant from assigned wheel parts and mesh geometry
     std::array<Vec3, 4> wheelPosSums{Vec3{0,0,0}, Vec3{0,0,0}, Vec3{0,0,0}, Vec3{0,0,0}};
     std::array<int, 4> wheelPartCounts{0, 0, 0, 0};
 
@@ -537,7 +584,17 @@ bool ModelLoaderGLB::loadFromFile(
         }
     }
 
-    // Calculate sub-part offsets relative to the wheel rotation center and group into role containers
+    // If manifest did not explicitly define chassis_center_offset, derive it from the wheel centers:
+    if (!manifest.hasExplicitChassisCenterOffset && outModel.wheelsIdentified[0] && outModel.wheelsIdentified[2]) {
+        const double midZ = 0.5 * (outModel.modelWheelCenters[0].z + outModel.modelWheelCenters[2].z);
+        const double midX = 0.5 * (outModel.modelWheelCenters[0].x + outModel.modelWheelCenters[1].x);
+        const double wheelHubY = 0.5 * (outModel.modelWheelCenters[0].y + outModel.modelWheelCenters[1].y);
+        const double deltaY = -(wheelHubY + 0.117);
+        outModel.chassisCenterOffset = Vec3{-midX, deltaY, -midZ};
+    }
+
+    // Accumulate collision geometry for all parts of the car (including tyres, rims, calipers, and chassis)
+    // and configure pre-computed sub-part relative transforms for wheel rendering.
     for (auto& p : rawParts) {
         int wIdx = -1;
         if (p.role == ModelPartRole::Wheel_FL) wIdx = 0;
@@ -548,19 +605,57 @@ bool ModelLoaderGLB::loadFromFile(
         if (wIdx >= 0) {
             const Vec3& pivot = outModel.modelWheelCenters[static_cast<size_t>(wIdx)];
             p.offsetFromWheelCenter = vec3Sub(p.localPosition, pivot);
+            // Mathematically exact relative transform for rendering: T(-pivot) * localBindMatrix
+            p.subPartLocalMatrix = Mat4::multiply(
+                Mat4::fromTranslation(vec3Scale(pivot, -1.0)),
+                p.localBindMatrix
+            );
+
+            // Extract wheel assembly vertices within physical wheel cylinder bounds (0.45m of hub)
+            RawMeshGeometry wheelGeom;
+            for (const auto& vLocal : p.cpuGeometry.vertices) {
+                const Vec3 vModel = mat4TransformPoint(p.localBindMatrix, vLocal);
+                if (vec3Length(vec3Sub(vModel, pivot)) <= 0.45) {
+                    wheelGeom.addVertex(vModel);
+                }
+            }
+
+            if (!wheelGeom.empty()) {
+                outModel.wheelMeshes[static_cast<size_t>(wIdx)].appendTransformed(wheelGeom, Mat4::identity());
+            }
+
             outModel.wheelParts[static_cast<size_t>(wIdx)].push_back(std::move(p));
         } else if (p.role == ModelPartRole::BrakeCaliper_FL) {
+            outModel.chassisCollisionMesh.appendTransformed(p.cpuGeometry, p.localBindMatrix);
             outModel.caliperParts[0].push_back(std::move(p));
         } else if (p.role == ModelPartRole::BrakeCaliper_FR) {
+            outModel.chassisCollisionMesh.appendTransformed(p.cpuGeometry, p.localBindMatrix);
             outModel.caliperParts[1].push_back(std::move(p));
         } else if (p.role == ModelPartRole::BrakeCaliper_RL) {
+            outModel.chassisCollisionMesh.appendTransformed(p.cpuGeometry, p.localBindMatrix);
             outModel.caliperParts[2].push_back(std::move(p));
         } else if (p.role == ModelPartRole::BrakeCaliper_RR) {
+            outModel.chassisCollisionMesh.appendTransformed(p.cpuGeometry, p.localBindMatrix);
             outModel.caliperParts[3].push_back(std::move(p));
         } else if (p.role == ModelPartRole::SteeringWheel) {
+            outModel.chassisCollisionMesh.appendTransformed(p.cpuGeometry, p.localBindMatrix);
             outModel.steeringWheelParts.push_back(std::move(p));
         } else {
+            // Main chassis body, doors, hood, glass, bumpers, lights, interior, mirrors, trim
+            outModel.chassisCollisionMesh.appendTransformed(p.cpuGeometry, p.localBindMatrix);
             outModel.chassisParts.push_back(std::move(p));
+        }
+    }
+
+    // Compute chassis and wheel collision mesh bounds
+    if (!outModel.chassisCollisionMesh.empty()) {
+        outModel.chassisCollisionMesh.computeBounds();
+        outModel.aabbMin = outModel.chassisCollisionMesh.aabbMin;
+        outModel.aabbMax = outModel.chassisCollisionMesh.aabbMax;
+    }
+    for (int i = 0; i < 4; ++i) {
+        if (!outModel.wheelMeshes[static_cast<size_t>(i)].empty()) {
+            outModel.wheelMeshes[static_cast<size_t>(i)].computeBounds();
         }
     }
 
