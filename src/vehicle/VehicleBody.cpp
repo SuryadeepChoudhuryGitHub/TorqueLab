@@ -313,6 +313,12 @@ void VehicleBody::syncMassProperties(const VehicleConfig& config) {
     m_rigidBody->activate(true);
 
     if (m_world) {
+        if (m_rigidBody->getBroadphaseHandle() && m_world->getBroadphase() && m_world->getBroadphase()->getOverlappingPairCache()) {
+            m_world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(
+                m_rigidBody->getBroadphaseHandle(),
+                m_world->getDispatcher()
+            );
+        }
         m_world->updateSingleAabb(m_rigidBody.get());
     }
 }
@@ -507,6 +513,12 @@ void VehicleBody::resetPose(const Vec3& position, const Quat& rotation) {
     m_rigidBody->activate(true);
 
     if (m_world) {
+        if (m_rigidBody->getBroadphaseHandle() && m_world->getBroadphase() && m_world->getBroadphase()->getOverlappingPairCache()) {
+            m_world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(
+                m_rigidBody->getBroadphaseHandle(),
+                m_world->getDispatcher()
+            );
+        }
         m_world->updateSingleAabb(m_rigidBody.get());
     }
 

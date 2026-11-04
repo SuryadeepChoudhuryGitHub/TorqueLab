@@ -19,11 +19,22 @@
 
 namespace torquelab {
 
-enum class GraphicsQuality {
-    High = 0,
+enum class GraphicsQuality : int {
+    Low = 0,
     Medium = 1,
-    Low = 2
+    High = 2,
+    Maximum = 3
 };
+
+inline const char* getGraphicsQualityName(GraphicsQuality q) {
+    switch (q) {
+        case GraphicsQuality::Low:     return "Low";
+        case GraphicsQuality::Medium:  return "Medium";
+        case GraphicsQuality::High:    return "High";
+        case GraphicsQuality::Maximum: return "Maximum";
+    }
+    return "Maximum";
+}
 
 class TrackRendererGL {
 public:
@@ -37,6 +48,7 @@ public:
     Mat4 getLightSpaceMatrix() const { return m_lightSpaceMatrix; }
     Vec3 getSunDirection() const { return m_sunDirection; }
     bool areShadowsEnabled() const { return m_quality != GraphicsQuality::Low; }
+    float getShadowTexelSize() const;
 
     void renderShadowPass(Shader& depthShader) const;
     void renderMainPass(Shader& mainShader) const;
@@ -51,12 +63,13 @@ private:
     void createProceduralSurfaceMaterials();
     void buildTrackMeshes(const std::vector<TrackBoxElement>& elements);
     void buildReferenceMarkers();
+    void buildEnvironmentTerrain();
 
     std::array<Texture2D, 6> m_surfaceTextures;
     std::array<MaterialProps, 6> m_surfaceMaterials;
     std::vector<RenderableTrackItem> m_items;
 
-    GraphicsQuality m_quality{GraphicsQuality::High};
+    GraphicsQuality m_quality{GraphicsQuality::Maximum};
     Vec3 m_sunDirection{vec3Normalize(Vec3{45.0, 75.0, 35.0})};
     Mat4 m_lightSpaceMatrix{Mat4::identity()};
 };

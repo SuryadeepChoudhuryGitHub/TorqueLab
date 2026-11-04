@@ -7,21 +7,45 @@ namespace torquelab {
 
 namespace {
 
+static inline btVector3 toBtVec3(const Vec3& v) {
+    return btVector3(static_cast<btScalar>(v.x), static_cast<btScalar>(v.y), static_cast<btScalar>(v.z));
+}
+
+static inline btQuaternion toBtQuat(const Quat& q) {
+    return btQuaternion(
+        static_cast<btScalar>(q.x),
+        static_cast<btScalar>(q.y),
+        static_cast<btScalar>(q.z),
+        static_cast<btScalar>(q.w)
+    );
+}
+
 struct ExcludeVehicleRayCallback : public btCollisionWorld::ClosestRayResultCallback {
     const btCollisionObject* m_ignoreObj{nullptr};
+    std::array<const btCollisionObject*, 4> m_wheelObjs{};
 
     ExcludeVehicleRayCallback(
         const btVector3& rayFromWorld,
         const btVector3& rayToWorld,
-        const btCollisionObject* ignoreObj
+        const btCollisionObject* ignoreObj,
+        const std::array<const btCollisionObject*, 4>& wheelObjs
     )
         : btCollisionWorld::ClosestRayResultCallback(rayFromWorld, rayToWorld)
         , m_ignoreObj(ignoreObj)
+        , m_wheelObjs(wheelObjs)
     {}
 
     bool needsCollision(btBroadphaseProxy* proxy0) const override {
-        if (proxy0 && proxy0->m_clientObject == m_ignoreObj) {
-            return false;
+        if (proxy0 && proxy0->m_clientObject) {
+            const auto* clientObj = static_cast<const btCollisionObject*>(proxy0->m_clientObject);
+            if (clientObj == m_ignoreObj) {
+                return false;
+            }
+            for (const auto* w : m_wheelObjs) {
+                if (clientObj == w) {
+                    return false;
+                }
+            }
         }
         return btCollisionWorld::ClosestRayResultCallback::needsCollision(proxy0);
     }
@@ -46,7 +70,9 @@ AnalyticalRayHit castRayExactWorld(
     const Vec3& rayDirWorld,
     double maxRayLength,
     const btCollisionObject* ignoreObj,
-    const SurfaceSystem* surfaceSystem = nullptr
+    const std::array<const btCollisionObject*, 4>& wheelObjsToIgnore,
+    const SurfaceSystem* surfaceSystem = nullptr,
+    bool includeObstacles = true
 ) {
     AnalyticalRayHit best{};
     best.distance = maxRayLength + 1.0;
@@ -61,8 +87,18 @@ AnalyticalRayHit castRayExactWorld(
         if (!obj || obj == ignoreObj) {
             continue;
         }
-        if (surfaceSystem && !surfaceSystem->isColliderDriveable(obj->getUserIndex())) {
-            continue; // Skip obstacles/walls: suspension rays pass through to the ground plane beneath
+        bool isWheel = false;
+        for (const auto* w : wheelObjsToIgnore) {
+            if (obj == w) {
+                isWheel = true;
+                break;
+            }
+        }
+        if (isWheel) {
+            continue;
+        }
+        if (!includeObstacles && surfaceSystem && !surfaceSystem->isColliderDriveable(obj->getUserIndex())) {
+            continue; // Skip non-driveable obstacles if explicitly requested
         }
         const btCollisionShape* shape = obj->getCollisionShape();
         if (!shape) {
@@ -170,7 +206,7 @@ AnalyticalRayHit castRayExactWorld(
         static_cast<btScalar>(rayEnd.y),
         static_cast<btScalar>(rayEnd.z)
     );
-    ExcludeVehicleRayCallback rayCallback(rayFrom, rayTo, ignoreObj);
+    ExcludeVehicleRayCallback rayCallback(rayFrom, rayTo, ignoreObj, wheelObjsToIgnore);
     world->rayTest(rayFrom, rayTo, rayCallback);
     if (rayCallback.hasHit()) {
         best.hit = true;
@@ -183,6 +219,157 @@ AnalyticalRayHit castRayExactWorld(
         });
         best.collisionObject = rayCallback.m_collisionObject;
     }
+    return best;
+}
+
+struct VolumetricContactOutput {
+    bool inContact{false};
+    double effectiveSuspensionLength{0.38};
+    Vec3 contactPointWorld{0.0, 0.0, 0.0};
+    Vec3 contactNormalWorld{0.0, 1.0, 0.0};
+    double circumferentialHitAngle{0.0};
+    double lateralOffset{0.0};
+    bool hasObstacleContact{false};
+    int colliderHandle{-1};
+    const btCollisionObject* hitObject{nullptr};
+};
+
+VolumetricContactOutput evaluateVolumetricWheelContact(
+    btDiscreteDynamicsWorld* world,
+    const SurfaceSystem* surfaceSystem,
+    const Vec3& mountWorld,
+    const Quat& chassisRot,
+    const Vec3& chassisDown,
+    double steeringAngle,
+    double wheelRadius,
+    double wheelWidth,
+    double suspensionMinLength,
+    double suspensionMaxLength,
+    double suspensionRestLength,
+    const btCollisionObject* ignoreBody,
+    const std::array<const btCollisionObject*, 4>& wheelObjsToIgnore
+) {
+    VolumetricContactOutput best{};
+    best.effectiveSuspensionLength = suspensionMaxLength;
+
+    const VehicleBasis chassisBasis = getVehicleBasis(chassisRot);
+    const Quat steerQuat = quatFromAxisAngle(chassisBasis.up, steeringAngle);
+    const Quat steeredRot = quatMultiply(chassisRot, steerQuat);
+    const VehicleBasis steeredBasis = getVehicleBasis(steeredRot);
+
+    // Tread width slices: inner shoulder (-40%), center (0%), outer shoulder (+40%)
+    constexpr double lateralFractions[3] = {-0.40, 0.0, +0.40};
+
+    // Circumference angles theta (rad):
+    // 0 = bottom contact patch
+    // > 0 = forward approach arc (hits curbs, blocks, ramps, steps before axle reaches them)
+    // < 0 = rear departure arc (supports wheel when descending from platform/curb)
+    constexpr int numAngles = 9;
+    constexpr double probeAngles[numAngles] = {
+        0.0,            // 0 deg: bottom patch
+        degToRad(15.0), // 15 deg
+        degToRad(30.0), // 30 deg
+        degToRad(45.0), // 45 deg (standard 10-15cm curb corner)
+        degToRad(60.0), // 60 deg (tall obstacle)
+        degToRad(75.0), // 75 deg (near-horizontal obstacle encounter)
+        degToRad(-15.0), // -15 deg
+        degToRad(-30.0), // -30 deg
+        degToRad(-45.0)  // -45 deg
+    };
+
+    const double rayStartOffset = 0.20; // 20cm headroom above mount
+    const double maxRayLength = rayStartOffset + suspensionMaxLength + 0.15;
+    const double maxValidLength = suspensionRestLength + 0.05;
+
+    double minCandidateLength = 1e9;
+    bool foundContact = false;
+
+    for (int a = 0; a < numAngles; ++a) {
+        const double theta = probeAngles[a];
+        const double sinT = std::sin(theta);
+        const double cosT = std::cos(theta);
+
+        for (int l = 0; l < 3; ++l) {
+            const double wOffset = lateralFractions[l] * wheelWidth;
+
+            // Offset on the 3D tyre outer circumference relative to the wheel hub center:
+            // r = w * axle + R * (sin(theta) * forward - cos(theta) * up)
+            const Vec3 rWheel = vec3Add(
+                vec3Scale(steeredBasis.left, wOffset),
+                vec3Add(
+                    vec3Scale(steeredBasis.forward, wheelRadius * sinT),
+                    vec3Scale(steeredBasis.down, wheelRadius * cosT)
+                )
+            );
+
+            // Ray start position (at zero suspension stroke, offset by rayStartOffset upwards)
+            const Vec3 rayOrigin = vec3Add(
+                vec3Add(mountWorld, rWheel),
+                vec3Scale(chassisBasis.up, rayStartOffset)
+            );
+
+            // Cast ray downwards parallel to suspension stroke (chassisDown)
+            AnalyticalRayHit hit = castRayExactWorld(
+                world,
+                rayOrigin,
+                chassisDown,
+                maxRayLength,
+                ignoreBody,
+                wheelObjsToIgnore,
+                surfaceSystem,
+                true // include obstacles
+            );
+
+            if (hit.hit) {
+                // Suspension length required for this point on the tyre circumference to contact the hit surface:
+                const double candLength = hit.distance - rayStartOffset;
+
+                // Check if this contact is within suspension reach
+                if (candLength <= maxValidLength && candLength < minCandidateLength) {
+                    Vec3 n = hit.normalWorld;
+                    if (vec3Dot(n, chassisBasis.up) < 0.0) {
+                        n = vec3Scale(n, -1.0);
+                    }
+
+                    // A surface facing roughly upward or inclined (n.y >= 0.15) can support/compress suspension
+                    if (vec3Dot(n, chassisBasis.up) >= 0.15 || std::abs(theta) > degToRad(20.0)) {
+                        minCandidateLength = candLength;
+                        foundContact = true;
+
+                        Vec3 effectiveNormal = vec3Normalize(n);
+                        if (std::abs(theta) > degToRad(5.0)) {
+                            // Reaction normal between circular tyre circumference and obstacle edge:
+                            // Points up (cos theta) and backwards (-sin theta) opposing forward motion
+                            const Vec3 circNormal = vec3Normalize(
+                                vec3Sub(
+                                    vec3Scale(chassisBasis.up, std::cos(theta)),
+                                    vec3Scale(steeredBasis.forward, std::sin(theta))
+                                )
+                            );
+                            effectiveNormal = circNormal;
+                        }
+
+                        best.inContact = true;
+                        best.effectiveSuspensionLength = candLength;
+                        best.contactPointWorld = hit.pointWorld;
+                        best.contactNormalWorld = effectiveNormal;
+                        best.circumferentialHitAngle = theta;
+                        best.lateralOffset = wOffset;
+                        best.hasObstacleContact = (std::abs(theta) > degToRad(8.0) || vec3Dot(n, chassisBasis.up) < 0.85);
+                        best.hitObject = hit.collisionObject;
+                        best.colliderHandle = hit.collisionObject ? hit.collisionObject->getUserIndex() : -1;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!foundContact) {
+        best.inContact = false;
+        best.effectiveSuspensionLength = suspensionRestLength;
+        best.contactNormalWorld = chassisBasis.up;
+    }
+
     return best;
 }
 
@@ -217,11 +404,15 @@ VehicleDynamics::VehicleDynamics(
     const VehicleBasis basis = getVehicleBasis(spawnRotation);
     for (int i = 0; i < 4; ++i) {
         const double eqLen = (i < 2) ? frontEqLen : rearEqLen;
+        const double r = getWheelRadius(config, i);
+        const double wWidth = getWheelWidth(config, i);
+
         wheels[static_cast<size_t>(i)] = createInitialWheelState(
             i,
             mounts[static_cast<size_t>(i)],
             eqLen,
-            config.wheelRadius
+            r,
+            wWidth
         );
         wheels[static_cast<size_t>(i)].mountPointWorld = localPointToWorld(
             mounts[static_cast<size_t>(i)],
@@ -232,11 +423,67 @@ VehicleDynamics::VehicleDynamics(
             wheels[static_cast<size_t>(i)].mountPointWorld,
             vec3Scale(basis.down, eqLen)
         );
+
+        // Dedicated 3D physical Bullet cylinder shape and collision object for this wheel
+        m_wheelCylinderShapes[static_cast<size_t>(i)] = std::make_unique<btCylinderShapeX>(
+            btVector3(
+                static_cast<btScalar>(wWidth * 0.5),
+                static_cast<btScalar>(r),
+                static_cast<btScalar>(r)
+            )
+        );
+        m_wheelCollisionObjects[static_cast<size_t>(i)] = std::make_unique<btCollisionObject>();
+        m_wheelCollisionObjects[static_cast<size_t>(i)]->setCollisionShape(
+            m_wheelCylinderShapes[static_cast<size_t>(i)].get()
+        );
+        m_wheelCollisionObjects[static_cast<size_t>(i)]->setCollisionFlags(
+            m_wheelCollisionObjects[static_cast<size_t>(i)]->getCollisionFlags() |
+            btCollisionObject::CF_NO_CONTACT_RESPONSE
+        );
+        m_wheelCollisionObjects[static_cast<size_t>(i)]->setUserIndex(100 + i);
+
+        btTransform wt;
+        wt.setIdentity();
+        wt.setOrigin(toBtVec3(wheels[static_cast<size_t>(i)].wheelCenterWorld));
+        wt.setRotation(toBtQuat(computeWheelWorldOrientation(spawnRotation, wheels[static_cast<size_t>(i)])));
+        m_wheelCollisionObjects[static_cast<size_t>(i)]->setWorldTransform(wt);
+
+        if (m_world) {
+            m_world->addCollisionObject(
+                m_wheelCollisionObjects[static_cast<size_t>(i)].get(),
+                btBroadphaseProxy::KinematicFilter,
+                btBroadphaseProxy::StaticFilter
+            );
+        }
     }
     m_prevWheelInContact.fill(true);
     m_latchedCollision = CollisionImpactEvent{};
     m_latchedSuspension = SuspensionHapticEvent{};
     capturePreviousTransforms();
+}
+
+VehicleDynamics::~VehicleDynamics() {
+    if (m_world) {
+        for (int i = 0; i < 4; ++i) {
+            if (m_wheelCollisionObjects[static_cast<size_t>(i)]) {
+                m_world->removeCollisionObject(m_wheelCollisionObjects[static_cast<size_t>(i)].get());
+            }
+        }
+    }
+}
+
+void VehicleDynamics::syncWheelCollisionObjects() {
+    const Quat chassisRot = body.getRotation();
+    for (int i = 0; i < 4; ++i) {
+        if (!m_wheelCollisionObjects[static_cast<size_t>(i)]) continue;
+        const WheelState& w = wheels[static_cast<size_t>(i)];
+        const Quat wRot = computeWheelWorldOrientation(chassisRot, w);
+        btTransform wt;
+        wt.setIdentity();
+        wt.setOrigin(toBtVec3(w.wheelCenterWorld));
+        wt.setRotation(toBtQuat(wRot));
+        m_wheelCollisionObjects[static_cast<size_t>(i)]->setWorldTransform(wt);
+    }
 }
 
 void VehicleDynamics::capturePreviousTransforms() {
@@ -273,18 +520,39 @@ void VehicleDynamics::step(double dt) {
 
     const double forwardSpeed = vec3Dot(velWorld, basis.forward);
 
-    // 1. Update local suspension mount positions and raycast along -basis.up
+    // 0. Update speed-sensitive Ackermann steering ahead of wheel contact queries
+    centerSteeringAngle = updateCenterSteeringAngle(
+        centerSteeringAngle,
+        currentInputs.steering,
+        forwardSpeed,
+        config,
+        dt
+    );
+    const AckermannSteeringAngles ackermann = computeAckermannWheelAngles(centerSteeringAngle, config);
+    wheels[0].steeringAngle = ackermann.frontLeftAngle;
+    wheels[1].steeringAngle = ackermann.frontRightAngle;
+    wheels[2].steeringAngle = 0.0;
+    wheels[3].steeringAngle = 0.0;
+
+    // Array of wheel collision objects to ignore during raycasting
+    std::array<const btCollisionObject*, 4> wheelObjsToIgnore{};
+    for (int i = 0; i < 4; ++i) {
+        wheelObjsToIgnore[static_cast<size_t>(i)] = m_wheelCollisionObjects[static_cast<size_t>(i)].get();
+    }
+
+    // 1. Update local suspension mount positions & execute Volumetric Circumferential Tyre Collision Query
     const auto localMounts = getWheelMountPositionsLocal(config);
-    const double rayStartOffset = 0.18;
-    const double maxRayLength =
-        rayStartOffset + config.suspensionMaxLength + config.wheelRadius + 0.05;
-    const double maxContactRayDist = config.suspensionRestLength + config.wheelRadius;
     const Vec3 chassisDown = basis.down;
 
     for (int i = 0; i < 4; ++i) {
         WheelState& w = wheels[static_cast<size_t>(i)];
         const bool wasInContact = w.inContact;
         w.prevSuspensionLength = w.suspensionLength;
+
+        const double wRadius = getWheelRadius(config, i);
+        const double wWidth  = getWheelWidth(config, i);
+        w.wheelRadius = wRadius;
+        w.wheelWidth  = wWidth;
 
         w.mountPointLocal = localMounts[static_cast<size_t>(i)];
         w.mountPointWorld = localPointToWorld(
@@ -294,104 +562,101 @@ void VehicleDynamics::step(double dt) {
         );
         const Vec3 mountVelWorld = body.getVelocityAtWorldPoint(w.mountPointWorld);
 
-        const Vec3 rayOrigin = vec3Add(w.mountPointWorld, vec3Scale(basis.up, rayStartOffset));
-        AnalyticalRayHit hit = castRayExactWorld(
+        // Volumetric circumferential collision query across tyre outer radius and tread width
+        VolumetricContactOutput volContact = evaluateVolumetricWheelContact(
             m_world,
-            rayOrigin,
+            m_surfaceSystem,
+            w.mountPointWorld,
+            chassisRot,
             chassisDown,
-            maxRayLength,
+            w.steeringAngle,
+            wRadius,
+            wWidth,
+            config.suspensionMinLength,
+            config.suspensionMaxLength,
+            config.suspensionRestLength,
             body.getRigidBody(),
-            m_surfaceSystem
+            wheelObjsToIgnore
         );
 
-        if (hit.hit && hit.normalWorld.y < 0.35) {
-            // A surface with steep vertical slope (normal.y < 0.35) is a wall or obstacle barrier, not a driveable road!
-            // Vehicle body collision is handled by Bullet's compound shape.
-            hit.hit = false;
-        }
+        if (volContact.inContact) {
+            w.inContact = true;
+            w.contactPointWorld = volContact.contactPointWorld;
+            w.contactNormalWorld = volContact.contactNormalWorld;
+            w.circumferentialHitAngle = volContact.circumferentialHitAngle;
+            w.lateralContactOffset = volContact.lateralOffset;
+            w.hasObstacleContact = volContact.hasObstacleContact;
 
-        if (hit.hit) {
-            const double distFromMount = std::max(0.02, hit.distance - rayStartOffset);
-            const int colliderHandle = hit.collisionObject
-                ? hit.collisionObject->getUserIndex()
-                : -1;
-            if (m_surfaceSystem) {
-                w.surface = m_surfaceSystem->getSurfaceForCollider(colliderHandle);
+            if (m_surfaceSystem && volContact.colliderHandle >= 0) {
+                w.surface = m_surfaceSystem->getSurfaceForCollider(volContact.colliderHandle);
             }
 
-            if (distFromMount <= maxContactRayDist) {
-                w.inContact = true;
-                w.contactPointWorld = hit.pointWorld;
-
-                Vec3 n = hit.normalWorld;
-                if (vec3Dot(n, basis.up) < 0.0) {
-                    n = vec3Scale(n, -1.0);
-                }
-                w.contactNormalWorld = vec3Normalize(n);
-
-                double roughnessOffset = 0.0;
-                if (w.surface.roughnessAmplitude > 0.0) {
-                    const double speedHoriz =
-                        std::hypot(w.patchSpeedLongitudinal, w.patchSpeedLateral);
-                    const double speedFactor = clamp(speedHoriz / 2.5, 0.0, 1.0);
-                    const double spatialPhase =
-                        (hit.pointWorld.x * 1.3 + hit.pointWorld.z) *
-                        w.surface.roughnessFrequency;
-                    roughnessOffset =
-                        w.surface.roughnessAmplitude * speedFactor * std::sin(spatialPhase);
-                }
-
-                const double rawLength = distFromMount - config.wheelRadius + roughnessOffset;
-                const double clampedLen = clamp(
-                    rawLength,
-                    config.suspensionMinLength * 0.85,
-                    config.suspensionRestLength
-                );
-
-                // Relative suspension velocity v = dL/dt
-                double lengthVel = 0.0;
-                if (wasInContact && dt > 1e-6) {
-                    lengthVel = (clampedLen - w.prevSuspensionLength) / dt;
-                } else {
-                    lengthVel = vec3Dot(mountVelWorld, basis.up);
-                }
-                lengthVel = clamp(lengthVel, -15.0, 15.0);
-                w.suspensionVelocity = lengthVel;
-
-                const SuspensionForceOutput suspOut = evaluateWheelSuspension(
-                    rawLength,
-                    lengthVel,
-                    w.isFront,
-                    config
-                );
-
-                w.suspensionLength = suspOut.clampedLength;
-                w.compression = suspOut.compression;
-                w.compressionRatio = suspOut.compressionRatio;
-                w.springForce = suspOut.springForce;
-                w.damperForce = suspOut.damperForce;
-                w.bumpStopForce = suspOut.bumpStopForce;
-                w.isBottomedOut = suspOut.isBottomedOut;
-                w.wheelCenterWorld = vec3Add(w.mountPointWorld, vec3Scale(chassisDown, w.suspensionLength));
-                continue;
+            double roughnessOffset = 0.0;
+            if (w.surface.roughnessAmplitude > 0.0) {
+                const double speedHoriz =
+                    std::hypot(w.patchSpeedLongitudinal, w.patchSpeedLateral);
+                const double speedFactor = clamp(speedHoriz / 2.5, 0.0, 1.0);
+                const double spatialPhase =
+                    (volContact.contactPointWorld.x * 1.3 + volContact.contactPointWorld.z) *
+                    w.surface.roughnessFrequency;
+                roughnessOffset =
+                    w.surface.roughnessAmplitude * speedFactor * std::sin(spatialPhase);
             }
-        }
 
-        // Wheel is airborne
-        w.inContact = false;
-        w.suspensionLength = config.suspensionRestLength;
-        w.compression = 0.0;
-        w.compressionRatio = 0.0;
-        w.suspensionVelocity = 0.0;
-        w.springForce = 0.0;
-        w.damperForce = 0.0;
-        w.bumpStopForce = 0.0;
-        w.antiRollForce = 0.0;
-        w.normalLoad = 0.0;
-        w.isBottomedOut = false;
-        w.wheelCenterWorld = vec3Add(w.mountPointWorld, vec3Scale(chassisDown, w.suspensionLength));
-        w.contactPointWorld = vec3Add(w.wheelCenterWorld, vec3Scale(chassisDown, config.wheelRadius));
-        w.contactNormalWorld = basis.up;
+            const double rawLength = volContact.effectiveSuspensionLength + roughnessOffset;
+            const double clampedLen = clamp(
+                rawLength,
+                config.suspensionMinLength * 0.85,
+                config.suspensionRestLength
+            );
+
+            // Relative suspension velocity v = dL/dt
+            double lengthVel = 0.0;
+            if (wasInContact && dt > 1e-6) {
+                lengthVel = (clampedLen - w.prevSuspensionLength) / dt;
+            } else {
+                lengthVel = vec3Dot(mountVelWorld, basis.up);
+            }
+            lengthVel = clamp(lengthVel, -15.0, 15.0);
+            w.suspensionVelocity = lengthVel;
+
+            const SuspensionForceOutput suspOut = evaluateWheelSuspension(
+                rawLength,
+                lengthVel,
+                w.isFront,
+                config
+            );
+
+            w.suspensionLength = suspOut.clampedLength;
+            w.compression = suspOut.compression;
+            w.compressionRatio = suspOut.compressionRatio;
+            w.springForce = suspOut.springForce;
+            w.damperForce = suspOut.damperForce;
+            w.bumpStopForce = suspOut.bumpStopForce;
+            w.isBottomedOut = suspOut.isBottomedOut;
+            w.wheelCenterWorld = vec3Add(w.mountPointWorld, vec3Scale(chassisDown, w.suspensionLength));
+        } else {
+            // Wheel is airborne
+            w.inContact = false;
+            w.hasObstacleContact = false;
+            w.circumferentialHitAngle = 0.0;
+            w.lateralContactOffset = 0.0;
+            w.suspensionLength = config.suspensionRestLength;
+            w.compression = 0.0;
+            w.compressionRatio = 0.0;
+            w.suspensionVelocity = 0.0;
+            w.springForce = 0.0;
+            w.damperForce = 0.0;
+            w.bumpStopForce = 0.0;
+            w.antiRollForce = 0.0;
+            w.normalLoad = 0.0;
+            w.isBottomedOut = false;
+            w.wheelCenterWorld = vec3Add(w.mountPointWorld, vec3Scale(chassisDown, w.suspensionLength));
+            w.contactPointWorld = vec3Add(w.wheelCenterWorld, vec3Scale(chassisDown, wRadius));
+            w.contactNormalWorld = basis.up;
+            w.obstacleResistanceForceWorld = Vec3{0.0, 0.0, 0.0};
+            w.tractionClimbingForceWorld = Vec3{0.0, 0.0, 0.0};
+        }
     }
 
     // Detect suspension haptic events (jump landings, bump-stop bottom-out, sharp curb/bump strikes)
@@ -465,38 +730,76 @@ void VehicleDynamics::step(double dt) {
     wheels[2].antiRollForce = rearArb.leftForce;
     wheels[3].antiRollForce = rearArb.rightForce;
 
-    // 3. Finalize vertical tire normal load F_z and apply suspension force at upper mount points
+    // 3. Finalize vertical tire normal load F_z, apply suspension force & obstacle interaction forces
     for (int i = 0; i < 4; ++i) {
         WheelState& w = wheels[static_cast<size_t>(i)];
         if (w.inContact) {
             const double rawNormalForce =
                 w.springForce + w.damperForce + w.bumpStopForce + w.antiRollForce;
-            const double normalAlignment = clamp(vec3Dot(w.contactNormalWorld, basis.up), 0.25, 1.0);
+            const double normalAlignment = clamp(vec3Dot(w.contactNormalWorld, basis.up), 0.20, 1.0);
             const double maxNormalLoad = config.mass * GRAVITY * 3.5; // Structural physical load ceiling (~51 kN)
             w.normalLoad = clamp(rawNormalForce * normalAlignment, 0.0, maxNormalLoad);
 
             if (w.normalLoad > 0.0) {
                 const Vec3 suspForceWorld = vec3Scale(basis.up, w.normalLoad);
                 body.applyForceAtWorldPoint(suspForceWorld, w.mountPointWorld);
+
+                // Multi-directional obstacle contact interaction (curbs, bumps, platforms, steps)
+                if (w.hasObstacleContact) {
+                    const Quat steerQ = quatFromAxisAngle(basis.up, w.steeringAngle);
+                    const Vec3 steeredFwd = quatRotateVec3(steerQ, basis.forward);
+
+                    // Decompose normal into vertical and horizontal components
+                    const double nVert = vec3Dot(w.contactNormalWorld, basis.up);
+                    const Vec3 nHoriz = vec3Sub(w.contactNormalWorld, vec3Scale(basis.up, nVert));
+                    const double nHorizLen = vec3Length(nHoriz);
+
+                    // 1. Horizontal obstacle reaction force opposing vehicle motion into obstacle
+                    if (nHorizLen > 0.05) {
+                        const Vec3 nHorizUnit = vec3Scale(nHoriz, 1.0 / nHorizLen);
+                        const double obsForceMag = clamp(
+                            w.normalLoad * (nHorizLen / std::max(0.20, nVert)),
+                            0.0,
+                            1.2 * w.normalLoad
+                        );
+                        // The obstacle reaction opposes velocity / forward movement into the obstacle:
+                        Vec3 obsDir = nHorizUnit;
+                        if (vec3Dot(obsDir, steeredFwd) > 0.0) {
+                            obsDir = vec3Scale(obsDir, -1.0);
+                        }
+                        const Vec3 obsForce = vec3Scale(obsDir, obsForceMag);
+                        w.obstacleResistanceForceWorld = obsForce;
+                        body.applyForceAtWorldPoint(obsForce, w.contactPointWorld);
+                    } else {
+                        w.obstacleResistanceForceWorld = Vec3{0.0, 0.0, 0.0};
+                    }
+
+                    // 2. Circumferential drive traction pulling wheel UP and OVER the obstacle
+                    if (w.driveTorque > 10.0 && w.angularVelocity > 0.1) {
+                        const double treadSpeed = w.angularVelocity * w.wheelRadius;
+                        const double fwdSpeed = vec3Dot(velWorld, steeredFwd);
+                        const double climbSlip = clamp((treadSpeed - fwdSpeed) / 1.5, 0.0, 1.0);
+                        const double climbMag = w.normalLoad * w.effectiveFrictionCoeff * climbSlip * 0.70;
+                        const Vec3 climbDir = vec3Normalize(vec3Add(basis.up, vec3Scale(steeredFwd, 0.5)));
+                        const Vec3 climbForce = vec3Scale(climbDir, climbMag);
+                        w.tractionClimbingForceWorld = climbForce;
+                        body.applyForceAtWorldPoint(climbForce, w.contactPointWorld);
+                    } else {
+                        w.tractionClimbingForceWorld = Vec3{0.0, 0.0, 0.0};
+                    }
+                } else {
+                    w.obstacleResistanceForceWorld = Vec3{0.0, 0.0, 0.0};
+                    w.tractionClimbingForceWorld = Vec3{0.0, 0.0, 0.0};
+                }
             }
         } else {
             w.normalLoad = 0.0;
+            w.obstacleResistanceForceWorld = Vec3{0.0, 0.0, 0.0};
+            w.tractionClimbingForceWorld = Vec3{0.0, 0.0, 0.0};
         }
     }
 
-    // 4. Update speed-sensitive Ackermann steering
-    centerSteeringAngle = updateCenterSteeringAngle(
-        centerSteeringAngle,
-        currentInputs.steering,
-        forwardSpeed,
-        config,
-        dt
-    );
-    const AckermannSteeringAngles ackermann = computeAckermannWheelAngles(centerSteeringAngle, config);
-    wheels[0].steeringAngle = ackermann.frontLeftAngle;
-    wheels[1].steeringAngle = ackermann.frontRightAngle;
-    wheels[2].steeringAngle = 0.0;
-    wheels[3].steeringAngle = 0.0;
+    // 4. Steering angles were already updated at the start of step() for circumferential probe accuracy
 
     // 5. Auto-reverse convenience in Automatic mode
     double effectiveThrottle = clamp(currentInputs.throttle, 0.0, 1.0);
@@ -576,7 +879,7 @@ void VehicleDynamics::step(double dt) {
 
         w.rollingResistanceTorque = computeWheelRollingResistanceTorque(
             w.normalLoad,
-            config.wheelRadius,
+            w.wheelRadius,
             w.angularVelocity,
             w.surface.rollingResistanceMultiplier,
             config
@@ -597,6 +900,7 @@ void VehicleDynamics::step(double dt) {
                 w.angularVelocity = clamp(w.angularVelocity, -260.0, 260.0);
             }
             w.rotationAngle += w.angularVelocity * dt;
+            w.worldOrientation = computeWheelWorldOrientation(chassisRot, w);
             w.slipRatio = 0.0;
             w.slipAngle = 0.0;
             w.effectiveFrictionCoeff = 0.0;
@@ -616,7 +920,7 @@ void VehicleDynamics::step(double dt) {
         for (int s = 0; s < wheelSubSteps; ++s) {
             const double slipRatio = computeLongitudinalSlipRatio(
                 w.angularVelocity,
-                config.wheelRadius,
+                w.wheelRadius,
                 vx
             );
             const double slipAngle = computeLateralSlipAngle(vx, vy);
@@ -631,7 +935,7 @@ void VehicleDynamics::step(double dt) {
             );
             lastTireOut = tireOut;
 
-            const double roadReactionTorque = -config.wheelRadius * tireOut.longitudinalForce;
+            const double roadReactionTorque = -w.wheelRadius * tireOut.longitudinalForce;
             double subDriveTorque = w.driveTorque;
             if (isWheelDriven && absTotalGearRatio > 0.1 && subDriveTorque * w.angularVelocity > 0.0) {
                 const double maxRedlineOmega = (config.maxRpm * (PI_D / 30.0)) / absTotalGearRatio;
@@ -660,6 +964,7 @@ void VehicleDynamics::step(double dt) {
         }
 
         w.rotationAngle += w.angularVelocity * dt;
+        w.worldOrientation = computeWheelWorldOrientation(chassisRot, w);
 
         const double avgFx = accumFx / static_cast<double>(wheelSubSteps);
         const double avgFy = accumFy / static_cast<double>(wheelSubSteps);
@@ -708,6 +1013,8 @@ void VehicleDynamics::step(double dt) {
     aeroState = computeAerodynamicForces(velWorld, basis.forward, basis.up, config);
     const Vec3 totalAeroForce = vec3Add(aeroState.dragForceWorld, aeroState.downforceWorld);
     body.applyCentralForce(totalAeroForce);
+
+    syncWheelCollisionObjects();
 }
 
 void VehicleDynamics::postWorldStep(double dt) {
@@ -731,7 +1038,9 @@ void VehicleDynamics::postWorldStep(double dt) {
             w.mountPointWorld,
             vec3Scale(basis.down, w.suspensionLength)
         );
+        w.worldOrientation = computeWheelWorldOrientation(chassisRot, w);
     }
+    syncWheelCollisionObjects();
 }
 
 void VehicleDynamics::resetVehicle(const Vec3* position, const Quat* rotation) {
@@ -766,7 +1075,8 @@ void VehicleDynamics::resetVehicle(const Vec3* position, const Quat* rotation) {
             i,
             mounts[static_cast<size_t>(i)],
             eqLen,
-            config.wheelRadius
+            getWheelRadius(config, i),
+            getWheelWidth(config, i)
         );
         wheels[static_cast<size_t>(i)].mountPointWorld = localPointToWorld(
             mounts[static_cast<size_t>(i)],
@@ -777,7 +1087,9 @@ void VehicleDynamics::resetVehicle(const Vec3* position, const Quat* rotation) {
             wheels[static_cast<size_t>(i)].mountPointWorld,
             vec3Scale(basis.down, eqLen)
         );
+        wheels[static_cast<size_t>(i)].worldOrientation = computeWheelWorldOrientation(rot, wheels[static_cast<size_t>(i)]);
     }
+    syncWheelCollisionObjects();
     m_prevWheelInContact.fill(true);
     m_latchedCollision = CollisionImpactEvent{};
     m_latchedSuspension = SuspensionHapticEvent{};

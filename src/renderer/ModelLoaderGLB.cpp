@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -42,6 +43,9 @@ unsigned int parseHexColor(const std::string& hexStr, unsigned int defaultHex = 
 
 // Simple key-value JSON reader for manifest configuration without bulky external dependencies
 struct ManifestConfig {
+    std::string modelName;
+    float scale{1.0f};
+    float rotationYDeg{0.0f};
     Vec3 chassisCenterOffset{0.0, -0.477, -0.1475};
     bool hasExplicitChassisCenterOffset{false};
     std::unordered_set<std::string> ignoreNodes;
@@ -92,6 +96,7 @@ ModelPartRole parseRoleString(const std::string& str) {
     if (s == "wheel_fr" || s == "wheel_front_right" || s == "fr") return ModelPartRole::Wheel_FR;
     if (s == "wheel_rl" || s == "wheel_rear_left" || s == "rl") return ModelPartRole::Wheel_RL;
     if (s == "wheel_rr" || s == "wheel_rear_right" || s == "rr") return ModelPartRole::Wheel_RR;
+    if (s == "wheel_all" || s == "wheels" || s == "wheels_all" || s == "wheel_auto") return ModelPartRole::Wheel_All;
     if (s == "caliper_fl" || s == "brakecaliper_fl") return ModelPartRole::BrakeCaliper_FL;
     if (s == "caliper_fr" || s == "brakecaliper_fr") return ModelPartRole::BrakeCaliper_FR;
     if (s == "caliper_rl" || s == "brakecaliper_rl") return ModelPartRole::BrakeCaliper_RL;
@@ -117,6 +122,19 @@ ManifestConfig loadManifest(const std::string& manifestPath) {
         const auto end = line.find_last_not_of(" \t\r\n");
         const std::string trimmed = line.substr(start, end - start + 1);
 
+        if (trimmed.find("\"model_name\"") != std::string::npos) {
+            const std::string mName = extractJsonString(trimmed, "model_name");
+            if (!mName.empty()) cfg.modelName = mName;
+            continue;
+        }
+        if (trimmed.find("\"scale\"") != std::string::npos) {
+            cfg.scale = extractJsonFloat(trimmed, "scale", cfg.scale);
+            continue;
+        }
+        if (trimmed.find("\"rotation_y_deg\"") != std::string::npos) {
+            cfg.rotationYDeg = extractJsonFloat(trimmed, "rotation_y_deg", cfg.rotationYDeg);
+            continue;
+        }
         if (trimmed.find("\"ignore_nodes\"") != std::string::npos) {
             currentSection = "ignore";
             continue;
@@ -246,7 +264,8 @@ std::string ModelLoaderGLB::resolveModelPath(const std::string& relPath) {
 bool ModelLoaderGLB::loadFromFile(
     const std::string& glbFilePath,
     LoadedVehicleModel& outModel,
-    const std::string& manifestFilePath
+    const std::string& manifestFilePath,
+    bool loadGpuResources
 ) {
     outModel = LoadedVehicleModel{};
     outModel.filePath = resolveModelPath(glbFilePath);
@@ -280,11 +299,72 @@ bool ModelLoaderGLB::loadFromFile(
         }
     }
     ManifestConfig manifest = loadManifest(resolvedManifest);
+    if (!manifest.modelName.empty()) {
+        outModel.modelName = manifest.modelName;
+    }
     outModel.chassisCenterOffset = manifest.chassisCenterOffset;
+
+    Mat4 rootTransform = Mat4::identity();
+    if (manifest.scale != 1.0f || manifest.rotationYDeg != 0.0f) {
+        const double rad = degToRad(manifest.rotationYDeg);
+        const Quat rotY = quatFromAxisAngle(Vec3{0, 1, 0}, rad);
+        rootTransform = Mat4::fromTRS(Vec3{0, 0, 0}, rotY, Vec3{manifest.scale, manifest.scale, manifest.scale});
+    }
 
     // Temporary list of all loaded parts before grouping
     std::vector<LoadedModelPart> rawParts;
     std::unordered_map<std::string, GLuint> textureCache;
+    std::map<std::pair<const void*, bool>, GLuint> embeddedTextureCache;
+
+    auto resolveAndLoadGltfTexture = [&](const cgltf_texture_view& view, bool isSRGB) -> GLuint {
+        if (!view.texture) return 0;
+        const cgltf_texture* tex = view.texture;
+        if (!tex->image) return 0;
+        const cgltf_image* img = tex->image;
+
+        // Check embedded bufferView first (GLB binary chunks)
+        if (img->buffer_view && img->buffer_view->buffer && img->buffer_view->buffer->data) {
+            const auto cacheKey = std::make_pair(static_cast<const void*>(img), isSRGB);
+            auto it = embeddedTextureCache.find(cacheKey);
+            if (it != embeddedTextureCache.end()) {
+                return it->second;
+            }
+            const auto* bv = img->buffer_view;
+            const uint8_t* bufData = static_cast<const uint8_t*>(bv->buffer->data) + bv->offset;
+            const int bufSize = static_cast<int>(bv->size);
+            auto loadedTex = std::make_unique<Texture2D>(Texture2D::loadFromMemory(bufData, bufSize, isSRGB));
+            if (loadedTex->isValid()) {
+                const GLuint texId = loadedTex->getId();
+                embeddedTextureCache[cacheKey] = texId;
+                outModel.loadedTextures.push_back(std::move(loadedTex));
+                return texId;
+            }
+        } else if (img->uri && strlen(img->uri) > 0) {
+            // External image file (PNG / JPEG)
+            const std::string uriStr(img->uri);
+            if (uriStr.rfind("data:", 0) != 0) {
+                std::filesystem::path modelDir = std::filesystem::path(outModel.filePath).parent_path();
+                std::filesystem::path resolvedPath = modelDir / uriStr;
+                std::string finalPath = resolvedPath.string();
+                if (!std::filesystem::exists(finalPath)) {
+                    finalPath = ModelLoaderGLB::resolveModelPath(uriStr);
+                }
+                const std::string cacheKey = finalPath + (isSRGB ? "_srgb" : "_linear");
+                auto it = textureCache.find(cacheKey);
+                if (it != textureCache.end()) {
+                    return it->second;
+                }
+                auto loadedTex = std::make_unique<Texture2D>(Texture2D::loadFromFile(finalPath, isSRGB));
+                if (loadedTex->isValid()) {
+                    const GLuint texId = loadedTex->getId();
+                    textureCache[cacheKey] = texId;
+                    outModel.loadedTextures.push_back(std::move(loadedTex));
+                    return texId;
+                }
+            }
+        }
+        return 0;
+    };
 
     outModel.aabbMin = Vec3{+1e9, +1e9, +1e9};
     outModel.aabbMax = Vec3{-1e9, -1e9, -1e9};
@@ -309,8 +389,9 @@ bool ModelLoaderGLB::loadFromFile(
         cgltf_float worldMatrix[16];
         cgltf_node_transform_world(node, worldMatrix);
 
-        Mat4 localBind;
-        for (int i = 0; i < 16; ++i) localBind.m[i] = worldMatrix[i];
+        Mat4 rawNodeBind;
+        for (int i = 0; i < 16; ++i) rawNodeBind.m[i] = worldMatrix[i];
+        const Mat4 localBind = Mat4::multiply(rootTransform, rawNodeBind);
         const Vec3 localPos{localBind.m[12], localBind.m[13], localBind.m[14]};
         const Quat localRot = quatIdentity();
         const Vec3 localScale{1.0, 1.0, 1.0};
@@ -324,15 +405,20 @@ bool ModelLoaderGLB::loadFromFile(
             const cgltf_accessor* posAcc = nullptr;
             const cgltf_accessor* normAcc = nullptr;
             const cgltf_accessor* uvAcc = nullptr;
+            const cgltf_accessor* tanAcc = nullptr;
 
             for (size_t a = 0; a < prim->attributes_count; ++a) {
                 const auto& attr = prim->attributes[a];
                 if (attr.type == cgltf_attribute_type_position) posAcc = attr.data;
                 else if (attr.type == cgltf_attribute_type_normal) normAcc = attr.data;
                 else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0) uvAcc = attr.data;
+                else if (attr.type == cgltf_attribute_type_tangent) tanAcc = attr.data;
             }
 
             if (!posAcc) continue;
+
+            Vec3 primMin{+1e9, +1e9, +1e9};
+            Vec3 primMax{-1e9, -1e9, -1e9};
 
             const size_t vertexCount = posAcc->count;
             std::vector<VertexPNU> vertices(vertexCount);
@@ -366,8 +452,29 @@ bool ModelLoaderGLB::loadFromFile(
                     vertices[v].v = 0.0f;
                 }
 
+                if (tanAcc) {
+                    float tanVal[4]{1, 0, 0, 1};
+                    cgltf_accessor_read_float(tanAcc, v, tanVal, 4);
+                    vertices[v].tx = tanVal[0];
+                    vertices[v].ty = tanVal[1];
+                    vertices[v].tz = tanVal[2];
+                    vertices[v].tw = tanVal[3];
+                } else {
+                    vertices[v].tx = 1.0f;
+                    vertices[v].ty = 0.0f;
+                    vertices[v].tz = 0.0f;
+                    vertices[v].tw = 1.0f;
+                }
+
                 // Accumulate model AABB in model coordinate space
                 const Vec3 vWorld = mat4TransformPoint(localBind, Vec3{pos[0], pos[1], pos[2]});
+                primMin.x = std::min(primMin.x, vWorld.x);
+                primMin.y = std::min(primMin.y, vWorld.y);
+                primMin.z = std::min(primMin.z, vWorld.z);
+                primMax.x = std::max(primMax.x, vWorld.x);
+                primMax.y = std::max(primMax.y, vWorld.y);
+                primMax.z = std::max(primMax.z, vWorld.z);
+
                 outModel.aabbMin.x = std::min(outModel.aabbMin.x, vWorld.x);
                 outModel.aabbMin.y = std::min(outModel.aabbMin.y, vWorld.y);
                 outModel.aabbMin.z = std::min(outModel.aabbMin.z, vWorld.z);
@@ -387,8 +494,15 @@ bool ModelLoaderGLB::loadFromFile(
                 for (size_t i = 0; i < vertexCount; ++i) indices[i] = static_cast<unsigned int>(i);
             }
 
+            // If glTF source had no tangent vectors, compute smooth orthogonal tangents and bitangent signs
+            if (!tanAcc) {
+                Mesh::computeTangents(vertices, indices);
+            }
+
             Mesh glMesh;
-            glMesh.upload(vertices, indices);
+            if (loadGpuResources) {
+                glMesh.upload(vertices, indices);
+            }
 
             RawMeshGeometry cpuGeom;
             cpuGeom.vertices.reserve(vertices.size());
@@ -405,29 +519,71 @@ bool ModelLoaderGLB::loadFromFile(
             std::string matName = "DefaultMaterial";
             bool isTransparent = false;
             bool isBrakeLight = false;
+            bool isReverseLight = false;
 
             if (prim->material) {
-                matName = prim->material->name ? prim->material->name : "Material";
-                if (lowerName.find("rim") != std::string::npos || lowerName.find("tyre") != std::string::npos) {
-                    std::cout << "[MeshPrim] " << nodeName << " p=" << p << " mat=" << matName << " numVerts=" << vertexCount << std::endl;
-                }
-                if (prim->material->has_pbr_metallic_roughness) {
-                    const auto& pbr = prim->material->pbr_metallic_roughness;
+                const cgltf_material* mat = prim->material;
+                matName = mat->name ? mat->name : "Material";
+                matProps.name = matName;
+
+                if (mat->has_pbr_metallic_roughness) {
+                    const auto& pbr = mat->pbr_metallic_roughness;
                     matProps.baseColor = Color3{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]};
                     matProps.metalness = pbr.metallic_factor;
                     matProps.roughness = pbr.roughness_factor;
                     matProps.opacity = pbr.base_color_factor[3];
+
+                    if (loadGpuResources && pbr.base_color_texture.texture) {
+                        matProps.textureId = resolveAndLoadGltfTexture(pbr.base_color_texture, true);
+                    }
+                    if (loadGpuResources && pbr.metallic_roughness_texture.texture) {
+                        matProps.metallicRoughnessMapId = resolveAndLoadGltfTexture(pbr.metallic_roughness_texture, false);
+                    }
                 }
-                if (prim->material->has_emissive_strength) {
-                    matProps.emissiveIntensity = prim->material->emissive_strength.emissive_strength;
+
+                // Normal texture map (Linear)
+                if (loadGpuResources && mat->normal_texture.texture) {
+                    matProps.normalMapId = resolveAndLoadGltfTexture(mat->normal_texture, false);
+                    matProps.normalScale = (mat->normal_texture.scale != 0.0f) ? mat->normal_texture.scale : 1.0f;
                 }
-                if (prim->material->alpha_mode == cgltf_alpha_mode_blend) {
+
+                // Ambient Occlusion texture map (Linear)
+                if (loadGpuResources && mat->occlusion_texture.texture) {
+                    matProps.occlusionMapId = resolveAndLoadGltfTexture(mat->occlusion_texture, false);
+                    matProps.occlusionStrength = (mat->occlusion_texture.scale != 0.0f) ? mat->occlusion_texture.scale : 1.0f;
+                }
+
+                // Emissive color factor & texture map (sRGB)
+                matProps.emissiveColor = Color3{mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
+                if (matProps.emissiveColor.r > 0.001f || matProps.emissiveColor.g > 0.001f || matProps.emissiveColor.b > 0.001f) {
+                    matProps.emissiveIntensity = 1.0f;
+                }
+                if (mat->has_emissive_strength) {
+                    matProps.emissiveIntensity = mat->emissive_strength.emissive_strength;
+                }
+                if (loadGpuResources && mat->emissive_texture.texture) {
+                    matProps.emissiveMapId = resolveAndLoadGltfTexture(mat->emissive_texture, true);
+                    if (matProps.emissiveIntensity <= 0.0f) matProps.emissiveIntensity = 1.0f;
+                }
+
+                // Alpha blending & masking
+                if (mat->alpha_mode == cgltf_alpha_mode_blend) {
+                    matProps.alphaMode = AlphaMode::Blend;
                     isTransparent = true;
+                } else if (mat->alpha_mode == cgltf_alpha_mode_mask) {
+                    matProps.alphaMode = AlphaMode::Mask;
+                    matProps.alphaCutoff = mat->alpha_cutoff;
+                } else {
+                    matProps.alphaMode = AlphaMode::Opaque;
                 }
+
+                matProps.doubleSided = (mat->double_sided != 0);
+                matProps.unlit = (mat->unlit != 0);
             }
 
-            // Apply heuristic or manifest PBR material enhancements based on material names
             const std::string lowerMat = toLower(matName);
+
+            // Manifest overrides take priority when explicitly defined
             if (manifest.materialOverrides.find(matName) != manifest.materialOverrides.end()) {
                 const auto& ovr = manifest.materialOverrides[matName];
                 matProps.roughness = ovr.roughness;
@@ -440,9 +596,10 @@ bool ModelLoaderGLB::loadFromFile(
                     matProps.emissiveColor = ovr.emissiveColor;
                     matProps.emissiveIntensity = ovr.emissiveIntensity;
                 }
-            } else {
+            } else if (!prim->material || !prim->material->has_pbr_metallic_roughness) {
+                // Heuristic fallback ONLY if the model had no authentic glTF PBR material values
                 if (lowerMat.find("paint") != std::string::npos || lowerMat.find("body") != std::string::npos) {
-                    matProps.baseColor = Color3::fromHex(0xdce0e6); // Alpine White
+                    matProps.baseColor = Color3::fromHex(0xdce0e6);
                     matProps.metalness = 0.70f;
                     matProps.roughness = 0.22f;
                 } else if (lowerMat.find("glass") != std::string::npos || lowerMat.find("windscreen") != std::string::npos || lowerMat.find("window") != std::string::npos) {
@@ -481,23 +638,48 @@ bool ModelLoaderGLB::loadFromFile(
                 }
             }
 
+            // Semantic vehicle reactive lights detection
+            if (lowerMat.find("rearlight") != std::string::npos ||
+                lowerMat.find("tailight") != std::string::npos ||
+                lowerMat.find("brakelight") != std::string::npos ||
+                lowerMat.find("rear_lights") != std::string::npos) {
+                isBrakeLight = true;
+            }
+            if (lowerMat.find("reverse_light") != std::string::npos) {
+                isReverseLight = true;
+            }
+
             if (manifest.isBrakeLightMap.count(matName)) isBrakeLight = manifest.isBrakeLightMap[matName];
             if (manifest.isTransparentMap.count(matName)) isTransparent = manifest.isTransparentMap[matName];
 
-            if (manifest.textureMap.count(matName)) {
+            // Explicit manifest texture overrides (e.g. decal composites)
+            if (loadGpuResources && manifest.textureMap.count(matName)) {
                 const std::string texRel = manifest.textureMap.at(matName);
                 const std::string texPath = resolveModelPath(texRel);
-                auto it = textureCache.find(texPath);
+                const std::string cacheKey = texPath + "_srgb";
+                auto it = textureCache.find(cacheKey);
                 if (it != textureCache.end()) {
                     matProps.textureId = it->second;
                 } else {
                     auto tex = std::make_unique<Texture2D>(Texture2D::loadFromFile(texPath, true));
                     if (tex->isValid()) {
                         matProps.textureId = tex->getId();
-                        textureCache[texPath] = tex->getId();
+                        textureCache[cacheKey] = tex->getId();
                         outModel.loadedTextures.push_back(std::move(tex));
                     }
                 }
+            }
+
+            // Store unique material for runtime inspection & UI diagnostics
+            bool matAlreadyRecorded = false;
+            for (const auto& existingMat : outModel.uniqueMaterials) {
+                if (existingMat.name == matProps.name) {
+                    matAlreadyRecorded = true;
+                    break;
+                }
+            }
+            if (!matAlreadyRecorded) {
+                outModel.uniqueMaterials.push_back(matProps);
             }
 
             // Resolve Semantic Role
@@ -517,17 +699,116 @@ bool ModelLoaderGLB::loadFromFile(
                 } else if (lowerName.find("wheel") != std::string::npos ||
                            lowerName.find("tire") != std::string::npos ||
                            lowerName.find("tyre") != std::string::npos ||
-                           lowerName.find("rim") != std::string::npos) {
-                    // Match spatial quadrant based on local position
-                    if (localPos.z >= 0.0) {
-                        role = (localPos.x >= 0.0) ? ModelPartRole::Wheel_FL : ModelPartRole::Wheel_FR;
+                           lowerName.find("rim") != std::string::npos ||
+                           lowerName.find("hubcap") != std::string::npos) {
+                    // Check if geometry spans multiple quadrants (merged wheel mesh across left/right or front/rear)
+                    if ((primMin.x < -0.35 && primMax.x > 0.35) || (primMin.z < -0.35 && primMax.z > 0.35)) {
+                        role = ModelPartRole::Wheel_All;
                     } else {
-                        role = (localPos.x >= 0.0) ? ModelPartRole::Wheel_RL : ModelPartRole::Wheel_RR;
+                        if (localPos.z >= 0.0) {
+                            role = (localPos.x >= 0.0) ? ModelPartRole::Wheel_FL : ModelPartRole::Wheel_FR;
+                        } else {
+                            role = (localPos.x >= 0.0) ? ModelPartRole::Wheel_RL : ModelPartRole::Wheel_RR;
+                        }
                     }
                 }
             }
 
             if (role == ModelPartRole::Ignore) continue;
+
+            if (role == ModelPartRole::Wheel_All) {
+                // Partition triangles into 4 independent wheel assemblies:
+                // 0=FL (Z>=0, X>=0), 1=FR (Z>=0, X<0), 2=RL (Z<0, X>=0), 3=RR (Z<0, X<0)
+                std::array<std::vector<unsigned int>, 4> quadIndices;
+                const size_t numTris = indices.size() / 3;
+                for (size_t t = 0; t < numTris; ++t) {
+                    const unsigned int i0 = indices[t * 3 + 0];
+                    const unsigned int i1 = indices[t * 3 + 1];
+                    const unsigned int i2 = indices[t * 3 + 2];
+
+                    const Vec3 p0 = mat4TransformPoint(localBind, Vec3{vertices[i0].px, vertices[i0].py, vertices[i0].pz});
+                    const Vec3 p1 = mat4TransformPoint(localBind, Vec3{vertices[i1].px, vertices[i1].py, vertices[i1].pz});
+                    const Vec3 p2 = mat4TransformPoint(localBind, Vec3{vertices[i2].px, vertices[i2].py, vertices[i2].pz});
+
+                    const Vec3 c = vec3Scale(vec3Add(vec3Add(p0, p1), p2), 1.0 / 3.0);
+                    int qIdx = 0;
+                    if (c.z >= 0.0) {
+                        qIdx = (c.x >= 0.0) ? 0 : 1;
+                    } else {
+                        qIdx = (c.x >= 0.0) ? 2 : 3;
+                    }
+                    quadIndices[static_cast<size_t>(qIdx)].push_back(i0);
+                    quadIndices[static_cast<size_t>(qIdx)].push_back(i1);
+                    quadIndices[static_cast<size_t>(qIdx)].push_back(i2);
+                }
+
+                static const ModelPartRole quadRoles[4] = {
+                    ModelPartRole::Wheel_FL,
+                    ModelPartRole::Wheel_FR,
+                    ModelPartRole::Wheel_RL,
+                    ModelPartRole::Wheel_RR
+                };
+                static const char* quadSuffix[4] = {"_FL", "_FR", "_RL", "_RR"};
+
+                for (int q = 0; q < 4; ++q) {
+                    const auto& qIdxs = quadIndices[static_cast<size_t>(q)];
+                    if (qIdxs.empty()) continue;
+
+                    std::vector<VertexPNU> qVerts;
+                    std::vector<unsigned int> qRemappedIndices;
+                    std::unordered_map<unsigned int, unsigned int> remap;
+                    qVerts.reserve(qIdxs.size());
+                    qRemappedIndices.reserve(qIdxs.size());
+
+                    Vec3 qPosSum{0.0, 0.0, 0.0};
+                    for (unsigned int oldIdx : qIdxs) {
+                        auto it = remap.find(oldIdx);
+                        if (it == remap.end()) {
+                            const unsigned int newIdx = static_cast<unsigned int>(qVerts.size());
+                            remap[oldIdx] = newIdx;
+                            qVerts.push_back(vertices[oldIdx]);
+                            const Vec3 vW = mat4TransformPoint(localBind, Vec3{vertices[oldIdx].px, vertices[oldIdx].py, vertices[oldIdx].pz});
+                            qPosSum = vec3Add(qPosSum, vW);
+                            qRemappedIndices.push_back(newIdx);
+                        } else {
+                            qRemappedIndices.push_back(it->second);
+                        }
+                    }
+
+                    const Vec3 qCenter = qVerts.empty() ? localPos : vec3Scale(qPosSum, 1.0 / static_cast<double>(qVerts.size()));
+
+                    Mesh qMesh;
+                    if (loadGpuResources) {
+                        qMesh.upload(qVerts, qRemappedIndices);
+                    }
+
+                    RawMeshGeometry qCpu;
+                    qCpu.vertices.reserve(qVerts.size());
+                    for (const auto& vt : qVerts) {
+                        qCpu.addVertex(Vec3{vt.px, vt.py, vt.pz});
+                    }
+                    qCpu.indices = qRemappedIndices;
+
+                    LoadedModelPart qPart{};
+                    qPart.name = nodeName + quadSuffix[q];
+                    qPart.mesh = std::move(qMesh);
+                    qPart.cpuGeometry = std::move(qCpu);
+                    qPart.localBindMatrix = localBind;
+                    qPart.localPosition = qCenter;
+                    qPart.localRotation = quatIdentity();
+                    qPart.localScale = Vec3{1.0, 1.0, 1.0};
+                    qPart.material = matProps;
+                    qPart.role = quadRoles[q];
+                    qPart.isBrakeLight = isBrakeLight;
+                    qPart.isReverseLight = isReverseLight;
+                    qPart.isTransparent = isTransparent;
+                    qPart.wheelLocalRotation = quatIdentity();
+                    qPart.wheelLocalScale = Vec3{1.0, 1.0, 1.0};
+
+                    rawParts.push_back(std::move(qPart));
+                }
+                continue;
+            }
 
             LoadedModelPart part{};
             part.name = nodeName;
@@ -540,6 +821,7 @@ bool ModelLoaderGLB::loadFromFile(
             part.material = matProps;
             part.role = role;
             part.isBrakeLight = isBrakeLight;
+            part.isReverseLight = isReverseLight;
             part.isTransparent = isTransparent;
             part.wheelLocalRotation = localRot;
             part.wheelLocalScale = localScale;
@@ -656,7 +938,34 @@ bool ModelLoaderGLB::loadFromFile(
     for (int i = 0; i < 4; ++i) {
         if (!outModel.wheelMeshes[static_cast<size_t>(i)].empty()) {
             outModel.wheelMeshes[static_cast<size_t>(i)].computeBounds();
+            const auto& wBounds = outModel.wheelMeshes[static_cast<size_t>(i)];
+            const Vec3 truePivot = vec3Scale(vec3Add(wBounds.aabbMin, wBounds.aabbMax), 0.5);
+            const double trueRadius = 0.5 * (wBounds.aabbMax.y - wBounds.aabbMin.y);
+            const double trueWidth = std::max(0.12, wBounds.aabbMax.x - wBounds.aabbMin.x);
+
+            outModel.modelWheelCenters[static_cast<size_t>(i)] = truePivot;
+            outModel.modelWheelRadii[static_cast<size_t>(i)] = trueRadius;
+            outModel.modelWheelWidths[static_cast<size_t>(i)] = trueWidth;
+            outModel.wheelsIdentified[static_cast<size_t>(i)] = true;
+
+            // Re-align sub-part relative transforms to the exact geometric center of the wheel assembly
+            for (auto& wp : outModel.wheelParts[static_cast<size_t>(i)]) {
+                wp.offsetFromWheelCenter = vec3Sub(wp.localPosition, truePivot);
+                wp.subPartLocalMatrix = Mat4::multiply(
+                    Mat4::fromTranslation(vec3Scale(truePivot, -1.0)),
+                    wp.localBindMatrix
+                );
+            }
         }
+    }
+
+    // Update chassis center offset if not explicitly provided in manifest
+    if (!manifest.hasExplicitChassisCenterOffset && outModel.wheelsIdentified[0] && outModel.wheelsIdentified[2]) {
+        const double midZ = 0.5 * (outModel.modelWheelCenters[0].z + outModel.modelWheelCenters[2].z);
+        const double midX = 0.5 * (outModel.modelWheelCenters[0].x + outModel.modelWheelCenters[1].x);
+        const double wheelHubY = 0.5 * (outModel.modelWheelCenters[0].y + outModel.modelWheelCenters[1].y);
+        const double deltaY = -(wheelHubY + 0.117);
+        outModel.chassisCenterOffset = Vec3{-midX, deltaY, -midZ};
     }
 
     outModel.loadedSuccessfully = true;

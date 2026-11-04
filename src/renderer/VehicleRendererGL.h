@@ -14,6 +14,7 @@
 
 #include <array>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "physics/Math3D.h"
 #include "renderer/Mesh.h"
@@ -36,16 +37,54 @@ public:
     void renderVisualDebug(Shader& lineShader, Shader& mainShader, const Mat4& viewProj) const;
 
     // Model mode & switching
-    bool isUsingImportedModel() const { return m_useImportedModel && m_importedModel.loadedSuccessfully; }
+    bool isUsingImportedModel() const { return m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully; }
     void setUseImportedModel(bool enable) {
-        if (m_importedModel.loadedSuccessfully) {
-            m_useImportedModel = enable;
+        if (!enable) {
+            m_useImportedModel = false;
+        } else if (m_activeModel && m_activeModel->loadedSuccessfully) {
+            m_useImportedModel = true;
         }
     }
-    bool hasImportedModel() const { return m_importedModel.loadedSuccessfully; }
-    const LoadedVehicleModel& getImportedModel() const { return m_importedModel; }
+    void setActiveVehicleModel(const std::string& vehicleId) {
+        m_activeModelId = vehicleId;
+        auto it = m_importedModels.find(vehicleId);
+        if (it != m_importedModels.end() && it->second.loadedSuccessfully) {
+            m_activeModel = &it->second;
+            m_useImportedModel = true;
+        } else {
+            m_activeModel = nullptr;
+            m_useImportedModel = false;
+        }
+    }
+    bool hasImportedModel(const std::string& vehicleId = "") const {
+        if (vehicleId.empty()) {
+            return m_activeModel && m_activeModel->loadedSuccessfully;
+        }
+        auto it = m_importedModels.find(vehicleId);
+        return (it != m_importedModels.end() && it->second.loadedSuccessfully);
+    }
+    const LoadedVehicleModel& getImportedModel(const std::string& vehicleId = "") const {
+        if (!vehicleId.empty()) {
+            auto it = m_importedModels.find(vehicleId);
+            if (it != m_importedModels.end()) return it->second;
+        }
+        if (m_activeModel) return *m_activeModel;
+        static const LoadedVehicleModel emptyModel{};
+        return emptyModel;
+    }
+    struct VehicleChoice {
+        std::string id;
+        std::string displayName;
+    };
+
+    const std::vector<VehicleChoice>& getAvailableVehicles() const { return m_availableVehicles; }
+    const std::unordered_map<std::string, LoadedVehicleModel>& getAllImportedModels() const { return m_importedModels; }
+
     const std::string& getActiveModelName() const {
-        return (m_useImportedModel && m_importedModel.loadedSuccessfully) ? m_importedModel.modelName : m_proceduralModelName;
+        return (m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully) ? m_activeModel->modelName : m_proceduralModelName;
+    }
+    const std::string& getActiveModelId() const {
+        return m_useImportedModel ? m_activeModelId : m_proceduralId;
     }
 
     // Visual alignment debug overlay toggle
@@ -71,6 +110,8 @@ private:
 
     // Procedural sports coupe model data
     std::string m_proceduralModelName{"Procedural Sports Coupe"};
+    std::string m_proceduralId{"procedural_coupe"};
+    std::vector<VehicleChoice> m_availableVehicles;
     std::vector<ChassisPart> m_chassisParts;
 
     // Steering wheel parts (relative to steering wheel pivot in chassis space)
@@ -93,8 +134,10 @@ private:
     Mesh m_strutMesh;
     MaterialProps m_strutMat;
 
-    // Imported Blender GLB vehicle model
-    LoadedVehicleModel m_importedModel;
+    // Imported Blender GLB vehicle models
+    std::unordered_map<std::string, LoadedVehicleModel> m_importedModels;
+    std::string m_activeModelId{"bmw_m4"};
+    LoadedVehicleModel* m_activeModel{nullptr};
     bool m_useImportedModel{true};
     bool m_showVisualDebug{false};
 

@@ -78,6 +78,35 @@ std::string VehicleCollisionGenerator::getCacheFilePath(const std::string& cache
     return cacheDir + safeId + "_collision.json";
 }
 
+bool VehicleCollisionGenerator::isCacheStale(
+    const std::string& cachePath,
+    const std::string& modelPath,
+    const std::string& manifestPath
+) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::exists(cachePath, ec)) return true; // Missing cache file
+
+    const auto cacheTime = fs::last_write_time(cachePath, ec);
+    if (ec) return true;
+
+    if (!modelPath.empty() && fs::exists(modelPath, ec)) {
+        const auto modelTime = fs::last_write_time(modelPath, ec);
+        if (!ec && modelTime > cacheTime) {
+            return true; // Model .glb modified after cache was generated
+        }
+    }
+
+    if (!manifestPath.empty() && fs::exists(manifestPath, ec)) {
+        const auto manifestTime = fs::last_write_time(manifestPath, ec);
+        if (!ec && manifestTime > cacheTime) {
+            return true; // Manifest JSON modified after cache was generated
+        }
+    }
+
+    return false;
+}
+
 std::vector<Vec3> VehicleCollisionGenerator::decimateVertices(
     const std::vector<Vec3>& inputVerts,
     int targetCount,
@@ -595,14 +624,18 @@ bool VehicleCollisionGenerator::generateFromModel(
     outCollision.sourceModelPath = model.filePath;
     outCollision.visualModelOffset = model.chassisCenterOffset;
 
-    // Check disk cache first
+    // Check disk cache first (with timestamp staleness validation)
     const std::string cachePath = getCacheFilePath(settings.cacheDirectory, outCollision.vehicleId);
-    if (settings.enableCaching && loadFromCache(outCollision, cachePath)) {
+    const bool stale = isCacheStale(cachePath, model.filePath);
+    if (settings.enableCaching && !stale && loadFromCache(outCollision, cachePath)) {
         outCollision.loadedFromCache = true;
         std::cout << "[VehicleCollisionGenerator] Loaded cached collision geometry for '"
                   << outCollision.vehicleId << "' from " << cachePath
                   << " (" << outCollision.pieces.size() << " convex hulls)" << std::endl;
         return true;
+    } else if (stale && std::filesystem::exists(cachePath)) {
+        std::cout << "[VehicleCollisionGenerator] Collision cache stale for '"
+                  << outCollision.vehicleId << "' (model was updated). Regenerating..." << std::endl;
     }
 
     // Automatically derive wheel dimensions and chassis metrics from model geometry
@@ -641,105 +674,41 @@ bool VehicleCollisionGenerator::generateFromModel(
             0.5 * (outCollision.derivedWheelCenters[0].z + outCollision.derivedWheelCenters[1].z) -
             0.5 * (outCollision.derivedWheelCenters[2].z + outCollision.derivedWheelCenters[3].z)
         );
-        outCollision.derivedTrackWidth = std::abs(
-            0.5 * (outCollision.derivedWheelCenters[0].x - outCollision.derivedWheelCenters[1].x +
-                   outCollision.derivedWheelCenters[2].x - outCollision.derivedWheelCenters[3].x)
-        );
+        outCollision.derivedFrontTrackWidth = std::abs(outCollision.derivedWheelCenters[0].x - outCollision.derivedWheelCenters[1].x);
+        outCollision.derivedRearTrackWidth  = std::abs(outCollision.derivedWheelCenters[2].x - outCollision.derivedWheelCenters[3].x);
+        outCollision.derivedTrackWidth = 0.5 * (outCollision.derivedFrontTrackWidth + outCollision.derivedRearTrackWidth);
+
+        const double frontRadius = (!model.wheelMeshes[0].empty()) ? (0.5 * (model.wheelMeshes[0].aabbMax.y - model.wheelMeshes[0].aabbMin.y)) : outCollision.derivedWheelRadius;
+        const double rearRadius  = (!model.wheelMeshes[2].empty()) ? (0.5 * (model.wheelMeshes[2].aabbMax.y - model.wheelMeshes[2].aabbMin.y)) : outCollision.derivedWheelRadius;
+        outCollision.derivedFrontWheelRadius = std::clamp(frontRadius, 0.20, 0.55);
+        outCollision.derivedRearWheelRadius  = std::clamp(rearRadius, 0.20, 0.55);
+
+        const double frontWidth = (!model.wheelMeshes[0].empty()) ? (model.wheelMeshes[0].aabbMax.x - model.wheelMeshes[0].aabbMin.x) : outCollision.derivedWheelWidth;
+        const double rearWidth  = (!model.wheelMeshes[2].empty()) ? (model.wheelMeshes[2].aabbMax.x - model.wheelMeshes[2].aabbMin.x) : outCollision.derivedWheelWidth;
+        outCollision.derivedFrontWheelWidth = std::clamp(frontWidth, 0.12, 0.45);
+        outCollision.derivedRearWheelWidth  = std::clamp(rearWidth, 0.12, 0.45);
+
+        for (int i = 0; i < 4; ++i) {
+            outCollision.derivedWheelMountsLocal[static_cast<size_t>(i)] = Vec3{
+                outCollision.derivedWheelCenters[i].x,
+                0.10, // Upper suspension mount height in chassis frame
+                outCollision.derivedWheelCenters[i].z
+            };
+        }
+
         const double tireBottomY = outCollision.derivedWheelCenters[0].y - outCollision.derivedWheelRadius;
         outCollision.derivedGroundClearance = std::max(0.05, chassisPhysicsMesh.aabbMin.y - tireBottomY);
         outCollision.geometryDerivedSuccessfully = true;
     }
 
     // Generate collision hulls from chassis collision mesh in Chassis Physics Space
+    // (Wheel assemblies are simulated separately via dedicated physical wheel collision shapes)
     const bool ok = generateFromMesh(
         chassisPhysicsMesh,
         outCollision.vehicleId,
         settings,
         outCollision
     );
-
-    // Generate shape-accurate volumetric collision hulls for all 4 wheels and tyres
-    static const char* wheelLabels[4] = {
-        "WheelFL_Hull",
-        "WheelFR_Hull",
-        "WheelRL_Hull",
-        "WheelRR_Hull"
-    };
-
-    for (size_t i = 0; i < 4; ++i) {
-        const auto& wMesh = model.wheelMeshes[i];
-        if (wMesh.vertices.empty()) continue;
-
-        RawMeshGeometry wheelPhysMesh;
-        wheelPhysMesh.appendTransformed(wMesh, offsetMat);
-        wheelPhysMesh.computeBounds();
-
-        if (wheelPhysMesh.vertices.size() < 6) continue;
-
-        // In Chassis Physics Space, clamp the bottom vertices of the wheel hull by 3.5cm
-        // so the wheel hull never fights the flat road contact patch while suspension is compressing,
-        // but maintains 100% collision coverage on front, rear, sides, top, and outer tread!
-        const Vec3& wCenter = outCollision.derivedWheelCenters[i];
-        const double wRadius = (outCollision.derivedWheelRadius > 0.15) ? outCollision.derivedWheelRadius : 0.32;
-        const double bottomClearanceY = wCenter.y - wRadius * 0.88;
-
-        std::vector<Vec3> verts = wheelPhysMesh.vertices;
-        for (auto& v : verts) {
-            v.y = std::max(v.y, bottomClearanceY);
-        }
-
-        std::vector<double> coords(verts.size() * 3);
-        for (size_t k = 0; k < verts.size(); ++k) {
-            coords[k * 3 + 0] = verts[k].x;
-            coords[k * 3 + 1] = verts[k].y;
-            coords[k * 3 + 2] = verts[k].z;
-        }
-
-        btConvexHullComputer computer;
-        computer.compute(coords.data(), sizeof(double) * 3, static_cast<int>(verts.size()), 0.0f, 0.0f);
-
-        if (computer.vertices.size() < 4) continue;
-
-        Vec3 centroid{0.0, 0.0, 0.0};
-        for (int k = 0; k < computer.vertices.size(); ++k) {
-            centroid.x += static_cast<double>(computer.vertices[k].x());
-            centroid.y += static_cast<double>(computer.vertices[k].y());
-            centroid.z += static_cast<double>(computer.vertices[k].z());
-        }
-        centroid = vec3Scale(centroid, 1.0 / static_cast<double>(computer.vertices.size()));
-
-        ConvexDecompositionPiece wheelPiece;
-        wheelPiece.centerModelSpace = centroid;
-        wheelPiece.label = wheelLabels[i];
-
-        Vec3 minL{1e9, 1e9, 1e9};
-        Vec3 maxL{-1e9, -1e9, -1e9};
-
-        wheelPiece.vertices.reserve(static_cast<size_t>(computer.vertices.size()));
-        for (int k = 0; k < computer.vertices.size(); ++k) {
-            const Vec3 vL{
-                static_cast<double>(computer.vertices[k].x()) - centroid.x,
-                static_cast<double>(computer.vertices[k].y()) - centroid.y,
-                static_cast<double>(computer.vertices[k].z()) - centroid.z
-            };
-            wheelPiece.vertices.push_back(vL);
-
-            minL.x = std::min(minL.x, vL.x);
-            minL.y = std::min(minL.y, vL.y);
-            minL.z = std::min(minL.z, vL.z);
-            maxL.x = std::max(maxL.x, vL.x);
-            maxL.y = std::max(maxL.y, vL.y);
-            maxL.z = std::max(maxL.z, vL.z);
-        }
-
-        wheelPiece.halfExtents = vec3Scale(vec3Sub(maxL, minL), 0.5);
-        wheelPiece.halfExtents.x = std::max(0.04, wheelPiece.halfExtents.x);
-        wheelPiece.halfExtents.y = std::max(0.04, wheelPiece.halfExtents.y);
-        wheelPiece.halfExtents.z = std::max(0.04, wheelPiece.halfExtents.z);
-        wheelPiece.volume = std::max(0.001, wheelPiece.halfExtents.x * wheelPiece.halfExtents.y * wheelPiece.halfExtents.z * 8.0);
-
-        outCollision.pieces.push_back(std::move(wheelPiece));
-    }
 
     // Save to disk cache
     if (ok && settings.enableCaching) {
@@ -789,15 +758,25 @@ void VehicleCollisionGenerator::applyDerivedGeometryToConfig(
     if (collision.derivedWheelbase > 1.5 && collision.derivedWheelbase < 4.0) {
         config.wheelbase = collision.derivedWheelbase;
     }
-    if (collision.derivedTrackWidth > 1.2 && collision.derivedTrackWidth < 2.5) {
+    if (collision.derivedTrackWidth > 1.0 && collision.derivedTrackWidth < 2.5) {
         config.trackWidth = collision.derivedTrackWidth;
+        config.frontTrackWidth = (collision.derivedFrontTrackWidth > 1.0) ? collision.derivedFrontTrackWidth : collision.derivedTrackWidth;
+        config.rearTrackWidth  = (collision.derivedRearTrackWidth > 1.0)  ? collision.derivedRearTrackWidth  : collision.derivedTrackWidth;
     }
     if (collision.derivedWheelRadius > 0.20 && collision.derivedWheelRadius < 0.55) {
         config.wheelRadius = collision.derivedWheelRadius;
+        config.frontWheelRadius = (collision.derivedFrontWheelRadius > 0.15) ? collision.derivedFrontWheelRadius : collision.derivedWheelRadius;
+        config.rearWheelRadius  = (collision.derivedRearWheelRadius > 0.15)  ? collision.derivedRearWheelRadius  : collision.derivedWheelRadius;
     }
-    if (collision.derivedWheelWidth > 0.15 && collision.derivedWheelWidth < 0.45) {
+    if (collision.derivedWheelWidth > 0.12 && collision.derivedWheelWidth < 0.45) {
         config.wheelWidth = collision.derivedWheelWidth;
+        config.frontWheelWidth = (collision.derivedFrontWheelWidth > 0.10) ? collision.derivedFrontWheelWidth : collision.derivedWheelWidth;
+        config.rearWheelWidth  = (collision.derivedRearWheelWidth > 0.10)  ? collision.derivedRearWheelWidth  : collision.derivedWheelWidth;
     }
+
+    config.hasExplicitWheelMounts = true;
+    config.explicitWheelMountsLocal = collision.derivedWheelMountsLocal;
+    config.explicitWheelCentersLocal = collision.derivedWheelCenters;
 
     // Update chassis half-extents from derived dimensions
     config.chassisHalfExtents = vec3Scale(collision.chassisDimensions, 0.5);
@@ -814,7 +793,7 @@ bool VehicleCollisionGenerator::saveToCache(const GeneratedVehicleCollision& col
     }
 
     file << "{\n";
-    file << "  \"cache_version\": 5,\n";
+    file << "  \"cache_version\": 6,\n";
     file << "  \"vehicle_id\": \"" << col.vehicleId << "\",\n";
     file << "  \"source_model_path\": \"" << safePath << "\",\n";
     file << "  \"strategy_used\": " << static_cast<int>(col.strategyUsed) << ",\n";
@@ -822,8 +801,14 @@ bool VehicleCollisionGenerator::saveToCache(const GeneratedVehicleCollision& col
     file << "  \"geometry_derived\": " << (col.geometryDerivedSuccessfully ? "true" : "false") << ",\n";
     file << "  \"derived_wheelbase\": " << std::fixed << std::setprecision(4) << col.derivedWheelbase << ",\n";
     file << "  \"derived_track_width\": " << col.derivedTrackWidth << ",\n";
+    file << "  \"derived_front_track_width\": " << col.derivedFrontTrackWidth << ",\n";
+    file << "  \"derived_rear_track_width\": " << col.derivedRearTrackWidth << ",\n";
     file << "  \"derived_wheel_radius\": " << col.derivedWheelRadius << ",\n";
+    file << "  \"derived_front_wheel_radius\": " << col.derivedFrontWheelRadius << ",\n";
+    file << "  \"derived_rear_wheel_radius\": " << col.derivedRearWheelRadius << ",\n";
     file << "  \"derived_wheel_width\": " << col.derivedWheelWidth << ",\n";
+    file << "  \"derived_front_wheel_width\": " << col.derivedFrontWheelWidth << ",\n";
+    file << "  \"derived_rear_wheel_width\": " << col.derivedRearWheelWidth << ",\n";
     file << "  \"derived_ground_clearance\": " << col.derivedGroundClearance << ",\n";
     file << "  \"aabb_min\": [" << col.chassisAABBMin.x << ", " << col.chassisAABBMin.y << ", " << col.chassisAABBMin.z << "],\n";
     file << "  \"aabb_max\": [" << col.chassisAABBMax.x << ", " << col.chassisAABBMax.y << ", " << col.chassisAABBMax.z << "],\n";
@@ -887,10 +872,22 @@ bool VehicleCollisionGenerator::loadFromCache(GeneratedVehicleCollision& col, co
             col.geometryDerivedSuccessfully = true;
         } else if (line.find("\"derived_track_width\"") != std::string::npos) {
             col.derivedTrackWidth = extractJsonNum(line, "derived_track_width", 0.0);
+        } else if (line.find("\"derived_front_track_width\"") != std::string::npos) {
+            col.derivedFrontTrackWidth = extractJsonNum(line, "derived_front_track_width", 0.0);
+        } else if (line.find("\"derived_rear_track_width\"") != std::string::npos) {
+            col.derivedRearTrackWidth = extractJsonNum(line, "derived_rear_track_width", 0.0);
         } else if (line.find("\"derived_wheel_radius\"") != std::string::npos) {
             col.derivedWheelRadius = extractJsonNum(line, "derived_wheel_radius", 0.0);
+        } else if (line.find("\"derived_front_wheel_radius\"") != std::string::npos) {
+            col.derivedFrontWheelRadius = extractJsonNum(line, "derived_front_wheel_radius", 0.0);
+        } else if (line.find("\"derived_rear_wheel_radius\"") != std::string::npos) {
+            col.derivedRearWheelRadius = extractJsonNum(line, "derived_rear_wheel_radius", 0.0);
         } else if (line.find("\"derived_wheel_width\"") != std::string::npos) {
             col.derivedWheelWidth = extractJsonNum(line, "derived_wheel_width", 0.0);
+        } else if (line.find("\"derived_front_wheel_width\"") != std::string::npos) {
+            col.derivedFrontWheelWidth = extractJsonNum(line, "derived_front_wheel_width", 0.0);
+        } else if (line.find("\"derived_rear_wheel_width\"") != std::string::npos) {
+            col.derivedRearWheelWidth = extractJsonNum(line, "derived_rear_wheel_width", 0.0);
         } else if (line.find("\"derived_ground_clearance\"") != std::string::npos) {
             col.derivedGroundClearance = extractJsonNum(line, "derived_ground_clearance", 0.0);
         } else if (line.find("\"visual_offset\"") != std::string::npos) {
@@ -975,11 +972,123 @@ bool VehicleCollisionGenerator::loadFromCache(GeneratedVehicleCollision& col, co
         col.totalOutputVertices += static_cast<int>(p.vertices.size());
     }
 
-    if (cacheVersion < 5) {
-        return false; // Automatically invalidate older cache schemas
+    if (cacheVersion < 6) {
+        return false; // Automatically invalidate older cache schemas (e.g. schemas with frozen wheel hulls)
     }
 
     return !col.pieces.empty();
+}
+
+int VehicleCollisionGenerator::bakeAllModelCollisions(
+    const std::string& modelDir,
+    bool forceRebake
+) {
+    namespace fs = std::filesystem;
+    std::cout << "====================================================================" << std::endl;
+    std::cout << " TORQUE LAB — 3D VEHICLE COLLISION & METRICS AUTO-BAKER" << std::endl;
+    std::cout << "====================================================================" << std::endl;
+
+    fs::path searchDir = modelDir;
+    if (!fs::exists(searchDir)) {
+        if (fs::exists(fs::path("..") / modelDir)) {
+            searchDir = fs::path("..") / modelDir;
+        } else if (fs::exists(fs::path("../..") / modelDir)) {
+            searchDir = fs::path("../..") / modelDir;
+        }
+    }
+
+    if (!fs::exists(searchDir)) {
+        std::cerr << "[BakeCollisions] Error: Model directory not found: " << modelDir << std::endl;
+        return -1;
+    }
+
+    std::cout << "[BakeCollisions] Scanning directory: " << fs::absolute(searchDir).string() << std::endl;
+
+    const fs::path cacheDir = searchDir / "cache";
+    fs::create_directories(cacheDir);
+
+    int bakedCount = 0;
+    int upToDateCount = 0;
+    int errorCount = 0;
+
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(searchDir, ec)) {
+        if (!entry.is_regular_file()) continue;
+
+        const auto ext = entry.path().extension().string();
+        std::string lowerExt = ext;
+        std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        if (lowerExt != ".glb" && lowerExt != ".gltf") continue;
+
+        const std::string glbPath = entry.path().string();
+        const std::string stem = entry.path().stem().string();
+
+        // Check for companion manifest
+        std::string manifestPath = (searchDir / (stem + "_manifest.json")).string();
+        if (!fs::exists(manifestPath)) {
+            manifestPath = "";
+        }
+
+        // Load model headlessly (CPU geometry only, no OpenGL context required)
+        LoadedVehicleModel model{};
+        if (!ModelLoaderGLB::loadFromFile(glbPath, model, manifestPath, false /* loadGpuResources = false */)) {
+            std::cerr << "[BakeCollisions] [ERROR] Failed to load model: " << glbPath << std::endl;
+            errorCount++;
+            continue;
+        }
+
+        const std::string vehicleId = model.modelName.empty() ? stem : model.modelName;
+        const std::string cacheFilePath = getCacheFilePath((cacheDir / "").string(), vehicleId);
+
+        const bool stale = isCacheStale(cacheFilePath, glbPath, manifestPath);
+        if (!stale && !forceRebake) {
+            std::cout << "  [UP-TO-DATE] " << std::left << std::setw(28) << model.modelName
+                      << " -> " << cacheFilePath << std::endl;
+            upToDateCount++;
+            continue;
+        }
+
+        std::cout << "  [BAKING]     " << std::left << std::setw(28) << model.modelName
+                  << " (stale or missing cache)..." << std::endl;
+
+        CollisionPipelineSettings settings{};
+        settings.cacheDirectory = (cacheDir / "").string();
+        settings.enableCaching = true;
+
+        GeneratedVehicleCollision collision{};
+        const auto startTime = std::chrono::high_resolution_clock::now();
+        if (generateFromModel(model, settings, collision)) {
+            const auto endTime = std::chrono::high_resolution_clock::now();
+            const double ms = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+
+            // Also copy to current directory model/cache if running from a build folder
+            const fs::path altCacheDir = fs::path("model") / "cache";
+            if (fs::exists(altCacheDir) && fs::absolute(altCacheDir) != fs::absolute(cacheDir)) {
+                saveToCache(collision, getCacheFilePath((altCacheDir / "").string(), vehicleId));
+            }
+
+            std::cout << "  [SUCCESS]    " << std::left << std::setw(28) << model.modelName
+                      << " (" << collision.pieces.size() << " hulls, "
+                      << std::fixed << std::setprecision(1) << ms << " ms)"
+                      << " WB=" << std::setprecision(3) << collision.derivedWheelbase << " m"
+                      << " TW=" << collision.derivedTrackWidth << " m"
+                      << " R=" << collision.derivedWheelRadius << " m"
+                      << std::endl;
+            bakedCount++;
+        } else {
+            std::cerr << "  [FAILED]     " << model.modelName << std::endl;
+            errorCount++;
+        }
+    }
+
+    std::cout << "--------------------------------------------------------------------" << std::endl;
+    std::cout << " Bake Summary: " << bakedCount << " baked/updated, "
+              << upToDateCount << " already up-to-date, "
+              << errorCount << " errors." << std::endl;
+    std::cout << "====================================================================" << std::endl;
+
+    return bakedCount;
 }
 
 } // namespace torquelab

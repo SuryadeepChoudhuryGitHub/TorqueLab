@@ -1,0 +1,47 @@
+{
+  "model_name": "1970 Dodge Challenger R/T",
+  "source": "Blender glTF 2.0 Export",
+  "scale": 0.725,
+  "rotation_y_deg": 180.0,
+  "axis_convention": {
+    "forward": "+Z",
+    "up": "+Y",
+    "left": "+X"
+  },
+  "ignore_nodes": [
+    "Ground",
+    "Plane",
+    "Camera",
+    "Light"
+  ],
+  "roles": {
+    "wheel.001": "Wheel_All",
+    "Cylinder": "Wheel_All",
+    "hubcap": "Wheel_All",
+    "steering_wheel": "SteeringWheel"
+  },
+  "material_overrides": {
+    "paint": { "roughness": 0.22, "metalness": 0.55, "base_color_hex": "#842010" },
+    "paint_w_stripes": { "roughness": 0.20, "metalness": 0.55, "base_color_hex": "#842010" },
+    "cchrome": { "roughness": 0.05, "metalness": 0.98, "base_color_hex": "#f8fafc" },
+    "cchrome_withbolts": { "roughness": 0.08, "metalness": 0.96, "base_color_hex": "#e2e8f0" },
+    "brushed_alumini": { "roughness": 0.25, "metalness": 0.85, "base_color_hex": "#cbd5e1" },
+    "MIRROR": { "roughness": 0.02, "metalness": 0.99, "base_color_hex": "#ffffff" },
+    "mirror_deformed": { "roughness": 0.02, "metalness": 0.99, "base_color_hex": "#ffffff" },
+    "rims": { "roughness": 0.18, "metalness": 0.88, "base_color_hex": "#d8dee9" },
+    "lock": { "roughness": 0.15, "metalness": 0.90, "base_color_hex": "#cbd5e1" },
+    "windshield": { "roughness": 0.05, "metalness": 0.15, "opacity": 0.32, "transparent": true, "base_color_hex": "#0f172a" },
+    "glass": { "roughness": 0.05, "metalness": 0.15, "opacity": 0.30, "transparent": true, "base_color_hex": "#0f172a" },
+    "frontglass_inner": { "roughness": 0.05, "metalness": 0.15, "opacity": 0.30, "transparent": true, "base_color_hex": "#0f172a" },
+    "frontglass_outher": { "roughness": 0.05, "metalness": 0.15, "opacity": 0.30, "transparent": true, "base_color_hex": "#0f172a" },
+    "b-light": { "roughness": 0.20, "metalness": 0.10, "is_brake_light": true, "base_color_hex": "#780808", "emissive_color_hex": "#ff1e1e" },
+    "rear_lights": { "roughness": 0.20, "metalness": 0.10, "is_brake_light": true, "base_color_hex": "#780808", "emissive_color_hex": "#ff1e1e" },
+    "reverse_light": { "roughness": 0.15, "metalness": 0.10, "is_reverse_light": true, "base_color_hex": "#cbd5e1", "emissive_color_hex": "#f8fafc" },
+    "head_lights": { "roughness": 0.10, "metalness": 0.10, "base_color_hex": "#ffffff", "emissive_color_hex": "#fef08a" },
+    "leather_black": { "roughness": 0.70, "metalness": 0.05, "base_color_hex": "#1a1d22" },
+    "blackleather": { "roughness": 0.70, "metalness": 0.05, "base_color_hex": "#1a1d22" },
+    "plastic": { "roughness": 0.40, "metalness": 0.08, "base_color_hex": "#15181c" },
+    "plastic_black": { "roughness": 0.40, "metalness": 0.08, "base_color_hex": "#15181c" },
+    "paintedsteel": { "roughness": 0.45, "metalness": 0.60, "base_color_hex": "#202428" }
+  }
+}

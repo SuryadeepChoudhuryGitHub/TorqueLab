@@ -107,13 +107,19 @@ VehicleConfig createBmwM4Config() {
     cfg.frontWeightDistribution = 0.525;
     cfg.inertiaTensor = Vec3{2600.0, 2800.0, 720.0};
 
-    // Chassis geometry: 2.76m wheelbase, 1.58m track width, length 4.67m, width 1.87m
+    // Chassis geometry: 2.76m wheelbase, authentic 1.427m model track width
     cfg.wheelbase = 2.76;
-    cfg.trackWidth = 1.58;
+    cfg.trackWidth = 1.427;
+    cfg.frontTrackWidth = 1.427;
+    cfg.rearTrackWidth = 1.427;
     cfg.chassisHalfExtents = Vec3{0.92, 0.35, 2.33};
     cfg.suspensionMountHeight = 0.10;
-    cfg.wheelRadius = 0.33; // 275/35 R19 & 285/30 R20 Michelin Pilot Super Sport
-    cfg.wheelWidth = 0.265;
+    cfg.wheelRadius = 0.297;
+    cfg.frontWheelRadius = 0.297;
+    cfg.rearWheelRadius = 0.297;
+    cfg.wheelWidth = 0.238;
+    cfg.frontWheelWidth = 0.238;
+    cfg.rearWheelWidth = 0.238;
     cfg.wheelInertia = 1.25;
 
     // Adaptive M suspension rates
@@ -187,6 +193,105 @@ VehicleConfig createBmwM4Config() {
     return cfg;
 }
 
+VehicleConfig createDodgeChallengerConfig() {
+    VehicleConfig cfg{};
+    cfg.id = "dodge_challenger";
+    cfg.displayName = "1970 Dodge Challenger R/T";
+    cfg.visualType = VehicleVisualType::ImportedGlb;
+    cfg.modelGlbPath = "model/Dodge_Challenger.glb";
+    cfg.modelManifestPath = "model/Dodge_Challenger_manifest.json";
+    cfg.visualOffset = Vec3{0.0, 0.0, 0.0};
+    cfg.collisionShapeType = CollisionShapeType::TaperedCompound;
+    cfg.noseTaperWidthFraction = 0.82;
+    cfg.rearTaperWidthFraction = 0.86;
+
+    // Authentic 1970 Dodge Challenger R/T 426 Hemi specs: ~1680 kg curb weight
+    cfg.mass = 1680.0;
+    cfg.comHeightOffset = 0.0;
+    cfg.frontWeightDistribution = 0.54; // Cast iron 426 Hemi V8 up front
+    cfg.inertiaTensor = Vec3{2850.0, 3100.0, 780.0};
+
+    // Authentic E-body geometry: 110.0 in (2.794 m) wheelbase, 1.56 m track width
+    cfg.wheelbase = 2.794;
+    cfg.trackWidth = 1.56;
+    cfg.chassisHalfExtents = Vec3{0.965, 0.38, 2.43}; // Length 4.86m, Width 1.93m
+    cfg.suspensionMountHeight = 0.10;
+    cfg.wheelRadius = 0.32; // F70-14 / G60-15 bias ply muscle tires
+    cfg.wheelWidth = 0.225;
+    cfg.wheelInertia = 1.20;
+
+    // Heavy-duty front torsion bars + rear multi-leaf springs (authentic 70s muscle car feel)
+    cfg.suspensionRestLength = 0.38;
+    cfg.suspensionMinLength = 0.14;
+    cfg.suspensionMaxLength = 0.49;
+    cfg.frontSpringStiffness = 32000.0;
+    cfg.rearSpringStiffness = 29500.0;
+    cfg.frontDampingCompression = 3300.0;
+    cfg.frontDampingRebound = 4500.0;
+    cfg.rearDampingCompression = 3000.0;
+    cfg.rearDampingRebound = 4200.0;
+    cfg.bumpStopStiffness = 175000.0;
+    cfg.frontAntiRollStiffness = 14000.0;
+    cfg.rearAntiRollStiffness = 9000.0; // Soft rear ARB produces authentic rear squat on hard launch
+
+    // Vintage muscle car bias-ply / radial tires (high slip angle, progressive breakaway)
+    cfg.tireFrictionCoeff = 1.08;
+    cfg.tireLongitudinalStiffness = 11.8;
+    cfg.tireLateralStiffness = 10.5;
+    cfg.tireLoadSensitivity = 0.12;
+    cfg.nominalTireLoad = 4120.0;
+    cfg.tireForceApplicationHeightOffset = 0.05;
+
+    // Steering (power recirculating ball)
+    cfg.maxSteeringAngle = 0.55;
+    cfg.steeringSpeed = 2.4;
+    cfg.steeringReturnSpeed = 3.2;
+    cfg.steeringSpeedSensitivity = 0.028;
+    cfg.ackermannFactor = 0.85;
+
+    // Chrysler 426 Hemi V8 (425 hp @ 5000 RPM, 490 lb-ft / 664 N*m @ 4000 RPM)
+    cfg.drivetrainLayout = DrivetrainLayout::RWD;
+    cfg.engineTorqueMultiplier = 1.0;
+    cfg.torqueCurve = {
+        {600.0,  320.0},
+        {800.0,  390.0},
+        {1500.0, 520.0},
+        {2500.0, 610.0},
+        {4000.0, 664.0}, // Peak torque
+        {5000.0, 610.0}, // Peak horsepower
+        {5800.0, 520.0},
+        {6500.0, 360.0},
+        {6800.0,  80.0}
+    };
+    cfg.idleRpm = 750.0;
+    cfg.maxRpm = 6500.0;
+    cfg.autoUpshiftRpm = 5600.0;
+    cfg.autoDownshiftRpm = 2000.0;
+    cfg.engineInertia = 0.38; // Heavy iron V8 rotating mass
+    cfg.engineBrakingTorque = 120.0;
+
+    // 4-Speed A-833 manual transmission & Dana 60 Sure-Grip rear axle (3.54:1)
+    cfg.gearRatios = {-2.66, 0.0, 2.66, 1.91, 1.39, 1.00};
+    cfg.finalDriveRatio = 3.54;
+    cfg.drivetrainEfficiency = 0.88;
+    cfg.differentialLockingCoeff = 65.0; // Dana 60 Sure-Grip mechanical LSD
+    cfg.shiftDuration = 0.18;
+
+    // Heavy-duty braking (11-inch front discs / 10-inch rear drums)
+    cfg.maxBrakeTorque = 3600.0;
+    cfg.brakeFrontBias = 0.62;
+    cfg.handbrakeTorque = 2800.0;
+
+    // Aerodynamics (wide muscle coupe)
+    cfg.airDensity = 1.225;
+    cfg.dragCoefficient = 0.44; // Classic 1970 muscle car aerodynamics
+    cfg.frontalArea = 2.35;
+    cfg.downforceCoefficient = 0.08;
+    cfg.rollingResistanceCoeff = 0.015;
+
+    return cfg;
+}
+
 bool saveVehicleConfigToJson(const VehicleConfig& cfg, const std::string& filePath) {
     std::ofstream out(filePath);
     if (!out.is_open()) return false;
@@ -207,9 +312,15 @@ bool saveVehicleConfigToJson(const VehicleConfig& cfg, const std::string& filePa
     out << "  \"front_weight_distribution\": " << cfg.frontWeightDistribution << ",\n";
     out << "  \"wheelbase\": " << cfg.wheelbase << ",\n";
     out << "  \"track_width\": " << cfg.trackWidth << ",\n";
+    out << "  \"front_track_width\": " << cfg.frontTrackWidth << ",\n";
+    out << "  \"rear_track_width\": " << cfg.rearTrackWidth << ",\n";
     out << "  \"chassis_half_extents\": [" << cfg.chassisHalfExtents.x << ", " << cfg.chassisHalfExtents.y << ", " << cfg.chassisHalfExtents.z << "],\n";
     out << "  \"wheel_radius\": " << cfg.wheelRadius << ",\n";
+    out << "  \"front_wheel_radius\": " << cfg.frontWheelRadius << ",\n";
+    out << "  \"rear_wheel_radius\": " << cfg.rearWheelRadius << ",\n";
     out << "  \"wheel_width\": " << cfg.wheelWidth << ",\n";
+    out << "  \"front_wheel_width\": " << cfg.frontWheelWidth << ",\n";
+    out << "  \"rear_wheel_width\": " << cfg.rearWheelWidth << ",\n";
     out << "  \"wheel_inertia\": " << cfg.wheelInertia << ",\n";
 
     out << "  \"front_spring_stiffness\": " << cfg.frontSpringStiffness << ",\n";
@@ -270,8 +381,14 @@ bool loadVehicleConfigFromJson(VehicleConfig& outCfg, const std::string& filePat
         if (trimmed.find("\"front_weight_distribution\"") != std::string::npos) outCfg.frontWeightDistribution = extractDouble(trimmed, "front_weight_distribution", outCfg.frontWeightDistribution);
         if (trimmed.find("\"wheelbase\"") != std::string::npos) outCfg.wheelbase = extractDouble(trimmed, "wheelbase", outCfg.wheelbase);
         if (trimmed.find("\"track_width\"") != std::string::npos) outCfg.trackWidth = extractDouble(trimmed, "track_width", outCfg.trackWidth);
+        if (trimmed.find("\"front_track_width\"") != std::string::npos) outCfg.frontTrackWidth = extractDouble(trimmed, "front_track_width", outCfg.frontTrackWidth);
+        if (trimmed.find("\"rear_track_width\"") != std::string::npos) outCfg.rearTrackWidth = extractDouble(trimmed, "rear_track_width", outCfg.rearTrackWidth);
         if (trimmed.find("\"wheel_radius\"") != std::string::npos) outCfg.wheelRadius = extractDouble(trimmed, "wheel_radius", outCfg.wheelRadius);
+        if (trimmed.find("\"front_wheel_radius\"") != std::string::npos) outCfg.frontWheelRadius = extractDouble(trimmed, "front_wheel_radius", outCfg.frontWheelRadius);
+        if (trimmed.find("\"rear_wheel_radius\"") != std::string::npos) outCfg.rearWheelRadius = extractDouble(trimmed, "rear_wheel_radius", outCfg.rearWheelRadius);
         if (trimmed.find("\"wheel_width\"") != std::string::npos) outCfg.wheelWidth = extractDouble(trimmed, "wheel_width", outCfg.wheelWidth);
+        if (trimmed.find("\"front_wheel_width\"") != std::string::npos) outCfg.frontWheelWidth = extractDouble(trimmed, "front_wheel_width", outCfg.frontWheelWidth);
+        if (trimmed.find("\"rear_wheel_width\"") != std::string::npos) outCfg.rearWheelWidth = extractDouble(trimmed, "rear_wheel_width", outCfg.rearWheelWidth);
         if (trimmed.find("\"front_spring_stiffness\"") != std::string::npos) outCfg.frontSpringStiffness = extractDouble(trimmed, "front_spring_stiffness", outCfg.frontSpringStiffness);
         if (trimmed.find("\"rear_spring_stiffness\"") != std::string::npos) outCfg.rearSpringStiffness = extractDouble(trimmed, "rear_spring_stiffness", outCfg.rearSpringStiffness);
         if (trimmed.find("\"front_damping_compression\"") != std::string::npos) outCfg.frontDampingCompression = extractDouble(trimmed, "front_damping_compression", outCfg.frontDampingCompression);

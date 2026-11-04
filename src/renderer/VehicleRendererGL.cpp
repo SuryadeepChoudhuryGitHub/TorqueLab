@@ -1,6 +1,9 @@
 #include "renderer/VehicleRendererGL.h"
 #include <glad/glad.h>
+#include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 
 namespace torquelab {
@@ -14,28 +17,68 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     m_wheelWidth = static_cast<float>(config.wheelWidth);
 
     // -------------------------------------------------------------------------
-    // 1. Attempt to load the Blender GLB vehicle model (.glb + manifest)
+    // 1. Discover and load all 3D vehicle models (.glb + manifest) in model/
     // -------------------------------------------------------------------------
-    const std::string glbPath = ModelLoaderGLB::resolveModelPath("model/BMW_M4.glb");
-    const std::string manifestPath = ModelLoaderGLB::resolveModelPath("model/BMW_M4_manifest.json");
+    m_importedModels.clear();
+    m_availableVehicles.clear();
 
-    std::cout << "[VehicleRendererGL] Searching for Blender 3D vehicle model at: " << glbPath << std::endl;
-    if (ModelLoaderGLB::loadFromFile(glbPath, m_importedModel, manifestPath)) {
-        m_useImportedModel = true;
-        std::cout << "[VehicleRendererGL] Primary vehicle visual model: " << m_importedModel.modelName
-                  << " (" << m_importedModel.totalTriangles << " triangles, "
-                  << m_importedModel.chassisParts.size() << " chassis nodes)" << std::endl;
-    } else {
-        m_useImportedModel = false;
-        std::cout << "[VehicleRendererGL] Notice: Blender model not loaded; falling back to Procedural Sports Coupe." << std::endl;
+    namespace fs = std::filesystem;
+    fs::path modelDir = "model";
+    if (!fs::exists(modelDir)) {
+        if (fs::exists("../model")) modelDir = "../model";
+        else if (fs::exists("../../model")) modelDir = "../../model";
+    }
+
+    if (fs::exists(modelDir)) {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(modelDir, ec)) {
+            if (!entry.is_regular_file()) continue;
+            const auto ext = entry.path().extension().string();
+            std::string lowerExt = ext;
+            std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (lowerExt != ".glb" && lowerExt != ".gltf") continue;
+
+            const std::string glbPath = entry.path().string();
+            const std::string stem = entry.path().stem().string();
+
+            // Check for companion manifest
+            std::string manifestPath = (modelDir / (stem + "_manifest.json")).string();
+            if (!fs::exists(manifestPath)) {
+                manifestPath = "";
+            }
+
+            LoadedVehicleModel loaded{};
+            if (ModelLoaderGLB::loadFromFile(glbPath, loaded, manifestPath, true)) {
+                std::string vehId = stem;
+                std::transform(vehId.begin(), vehId.end(), vehId.begin(), [](unsigned char c) {
+                    return (c == ' ' || c == '-') ? '_' : static_cast<char>(std::tolower(c));
+                });
+
+                std::string dispName = loaded.modelName.empty() ? stem : loaded.modelName;
+                m_importedModels[vehId] = std::move(loaded);
+                m_availableVehicles.push_back({vehId, dispName});
+                std::cout << "[VehicleRendererGL] Loaded model: " << dispName << " [id: " << vehId << "]" << std::endl;
+            }
+        }
+    }
+
+    // Always include procedural sports coupe option
+    m_availableVehicles.push_back({"procedural_coupe", "Procedural Sports Coupe"});
+
+    // Set initial active model based on vehicle config
+    setActiveVehicleModel(config.id);
+    if (!m_useImportedModel && !m_importedModels.empty()) {
+        setActiveVehicleModel(m_importedModels.begin()->first);
     }
 
     // Allocate storage for per-wheel imported part transforms
-    for (int i = 0; i < 4; ++i) {
-        m_importedWheelPartMatrices[static_cast<size_t>(i)].resize(
-            m_importedModel.wheelParts[static_cast<size_t>(i)].size(),
-            Mat4::identity()
-        );
+    if (m_activeModel && m_activeModel->loadedSuccessfully) {
+        for (int i = 0; i < 4; ++i) {
+            m_importedWheelPartMatrices[static_cast<size_t>(i)].resize(
+                m_activeModel->wheelParts[static_cast<size_t>(i)].size(),
+                Mat4::identity()
+            );
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -224,7 +267,7 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
     // Compute imported model chassis matrix (offset relative to physics CoM)
     m_importedChassisWorldMatrix = Mat4::multiply(
         m_chassisWorldMatrix,
-        Mat4::fromTranslation(m_importedModel.chassisCenterOffset)
+        Mat4::fromTranslation((m_activeModel && m_activeModel->loadedSuccessfully) ? m_activeModel->chassisCenterOffset : Vec3{0, 0, 0})
     );
 
     const float rotorRadius = m_wheelRadius * 0.50f;
@@ -265,8 +308,8 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
         );
 
         // 2. Imported model wheel subparts transforms
-        if (m_importedModel.loadedSuccessfully) {
-            const auto& parts = m_importedModel.wheelParts[static_cast<size_t>(i)];
+        if (m_activeModel && m_activeModel->loadedSuccessfully) {
+            const auto& parts = m_activeModel->wheelParts[static_cast<size_t>(i)];
             auto& outMats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
             if (outMats.size() != parts.size()) {
                 outMats.resize(parts.size(), Mat4::identity());
@@ -285,16 +328,16 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
 }
 
 void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
-    if (m_useImportedModel && m_importedModel.loadedSuccessfully) {
+    if (m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully) {
         // Shadow pass for imported Blender model
-        for (const auto& part : m_importedModel.chassisParts) {
+        for (const auto& part : m_activeModel->chassisParts) {
             if (!part.material.castShadows || part.isTransparent) continue;
             depthShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));
             part.mesh.draw();
         }
 
         for (int i = 0; i < 4; ++i) {
-            const auto& parts = m_importedModel.wheelParts[static_cast<size_t>(i)];
+            const auto& parts = m_activeModel->wheelParts[static_cast<size_t>(i)];
             const auto& mats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
             for (size_t k = 0; k < parts.size(); ++k) {
                 if (!parts[k].material.castShadows) continue;
@@ -321,13 +364,13 @@ void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
 }
 
 void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
-    if (m_useImportedModel && m_importedModel.loadedSuccessfully) {
+    if (m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully) {
         // ---------------------------------------------------------------------
-        // IMPORTED BLENDER VEHICLE MODEL (BMW M4 Coupe)
+        // IMPORTED BLENDER VEHICLE MODEL (BMW M4 Coupe / Dodge Challenger)
         // ---------------------------------------------------------------------
 
         // 1. Opaque Chassis Parts (Body, hood, trunk, fenders, interior, spoilers)
-        for (const auto& part : m_importedModel.chassisParts) {
+        for (const auto& part : m_activeModel->chassisParts) {
             if (part.isTransparent) continue;
             MaterialProps mat = part.material;
 
@@ -346,7 +389,7 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
 
         // 2. Four Independent Wheels (Rims, Tires, Center Caps with realistic PBR materials)
         for (int i = 0; i < 4; ++i) {
-            const auto& parts = m_importedModel.wheelParts[static_cast<size_t>(i)];
+            const auto& parts = m_activeModel->wheelParts[static_cast<size_t>(i)];
             const auto& mats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
 
             for (size_t k = 0; k < parts.size(); ++k) {
@@ -365,7 +408,7 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
-        for (const auto& part : m_importedModel.chassisParts) {
+        for (const auto& part : m_activeModel->chassisParts) {
             if (!part.isTransparent) continue;
             mainShader.applyMaterial(part.material);
             mainShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));

@@ -17,12 +17,18 @@ struct WheelState {
     bool isFront{true};
     bool isLeft{true};
 
-    // --- Geometry & Raycast Contact ---
+    // --- Geometry & Volumetric Physical Tyre Contact ---
+    double wheelRadius{0.32};               // Outer radius of tyre circumference (m)
+    double wheelWidth{0.24};                // Tyre section width (m)
     Vec3 mountPointLocal{0.0, 0.0, 0.0};    // Upper suspension mount in chassis frame (m)
     Vec3 mountPointWorld{0.0, 0.0, 0.0};    // Upper suspension mount in world frame (m)
     Vec3 wheelCenterWorld{0.0, 0.0, 0.0};   // Current 3D center of wheel hub in world frame (m)
-    Vec3 contactPointWorld{0.0, 0.0, 0.0};  // Ground contact patch position in world frame (m)
-    Vec3 contactNormalWorld{0.0, 1.0, 0.0}; // Ground surface unit normal in world frame
+    Quat worldOrientation{0.0, 0.0, 0.0, 1.0}; // Full 3D world orientation of wheel (chassis + steer + camber + spin)
+    Vec3 contactPointWorld{0.0, 0.0, 0.0};  // Contact position on outer circumference or ground patch (m)
+    Vec3 contactNormalWorld{0.0, 1.0, 0.0}; // Contact normal unit vector pointing from obstacle into tyre
+    double circumferentialHitAngle{0.0};    // Angle on tyre circumference where contact occurred (+ = forward arc, - = rear)
+    double lateralContactOffset{0.0};       // Offset across tyre tread width where contact occurred (-W/2 to +W/2)
+    bool hasObstacleContact{false};         // True when contacting curb, ramp, step, or forward obstacle
     bool inContact{false};
     SurfaceProperties surface{getSurfaceProperties(SurfaceType::DryAsphalt)};
 
@@ -56,6 +62,8 @@ struct WheelState {
     double gripUsageRatio{0.0};             // sqrt(F_x^2 + F_y^2) / (mu_eff * F_z) in [0..1]
     bool isSkidding{false};                 // True when gripUsageRatio > 0.88 and significant slip exists
     Vec3 tireForceWorld{0.0, 0.0, 0.0};     // Total horizontal tire force vector in world space (N)
+    Vec3 obstacleResistanceForceWorld{0.0, 0.0, 0.0}; // Horizontal impulse resistance from obstacle impact (N)
+    Vec3 tractionClimbingForceWorld{0.0, 0.0, 0.0};   // Circumferential traction climbing force (N)
 
     // --- Torques ---
     double driveTorque{0.0};                // Drivetrain torque applied to wheel hub (N*m)
@@ -67,7 +75,8 @@ inline WheelState createInitialWheelState(
     WheelIndex index,
     const Vec3& mountLocal,
     double restLength,
-    double wheelRadius
+    double wheelRadius,
+    double wheelWidth = 0.24
 ) {
     static const char* const ids[4] = {"FL", "FR", "RL", "RR"};
     const bool isFront = (index == 0 || index == 1);
@@ -78,6 +87,8 @@ inline WheelState createInitialWheelState(
     w.id = (index >= 0 && index < 4) ? ids[index] : "FL";
     w.isFront = isFront;
     w.isLeft = isLeft;
+    w.wheelRadius = wheelRadius;
+    w.wheelWidth = wheelWidth;
     w.mountPointLocal = mountLocal;
     w.mountPointWorld = mountLocal;
     w.wheelCenterWorld = Vec3{mountLocal.x, mountLocal.y - restLength, mountLocal.z};

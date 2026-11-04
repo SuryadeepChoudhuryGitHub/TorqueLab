@@ -22,11 +22,13 @@ All commands run from the workspace root: `d:\# My Folder\My Work\Visual Studio 
 ```powershell
 # 1. Build both the main application and the automated test runner (Release)
 cmake --build build --config Release --target TorqueLabNative TorqueLabNativeTests
+# Or with GCC 14 (UCRT64 MinGW):
+cmake --build build_gcc -j 4
 
 # 2. Run the interactive desktop application (1440x900 OpenGL 3.3 window)
 .\build\Release\TorqueLabNative.exe
 
-# 3. Run the 24-suite automated unit, validation & controlled physics test harness
+# 3. Run the 30-suite automated unit, validation & controlled physics test harness
 .\build\Release\TorqueLabNativeTests.exe
 
 # 4. Run full-pipeline acceleration telemetry table + 600-frame live OpenGL timing diagnostics
@@ -64,7 +66,10 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 - [`src/physics/PhysicsWorld.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/PhysicsWorld.h) & [`PhysicsWorld.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/physics/PhysicsWorld.cpp): Owns `btDiscreteDynamicsWorld`, fixed `120 Hz` (`fixedDt = 1/120 s`, `maxSubSteps = 12`) accumulator loop (`updateFrame`, `stepFixed`), the Proving Ground track layout (`buildProvingGround`), and the 7 teleport spawn presets (`getProvingGroundPresets`). Supports switching vehicles with model-derived collision shapes.
 
 ### `src/vehicle/` — 6-DOF Vehicle Dynamics Subsystems
-- [`src/vehicle/VehicleConfig.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleConfig.h): `VehicleConfig` struct and `createDefaultVehicleConfig()` (`mass = 1500 kg`, `wheelbase = 2.68 m`, `trackWidth = 1.58 m`, `frontWeightDistribution = 0.52`, `wheelRadius = 0.32 m`, `wheelInertia = 1.15 kg·m²`, `frontSpringStiffness = 35000 N/m`, `rearSpringStiffness = 32500 N/m`, `idleRpm = 850`, `maxRpm = 7000`, 6-speed + R + N gear ratios, `finalDriveRatio = 3.96`, `tireFrictionCoeff = 1.15`, `dragCoefficient = 0.31`, `frontalArea = 2.15 m²`).
+- [`src/vehicle/VehicleConfig.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleConfig.h) & [`VehicleConfig.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleConfig.cpp): `VehicleConfig` presets:
+  - `createBmwM4Config()` (Factory M4 Coupe: S55/S58 3.0L twin-turbo I6, $550\text{ N}\cdot\text{m}$, 6-speed RWD, mass $1600\text{ kg}$, wheelbase $2.76\text{ m}$, track $1.58\text{ m}$).
+  - `createDodgeChallengerConfig()` (Authentic 1970 Dodge Challenger R/T: 426 cu in Street Hemi V8, $664\text{ N}\cdot\text{m}$ peak torque, 4-speed manual gearbox, Dana 60 Sure-Grip LSD 3.54:1, mass $1680\text{ kg}$, 54% front distribution, wheelbase $2.794\text{ m}$ [$110.0\text{ in}$], track $1.56\text{ m}$, vintage muscle bias-ply tires and softer rear ARB for authentic launch squat).
+  - `createProceduralCoupeConfig()` (`mass = 1500 kg`, `wheelbase = 2.70 m`, `trackWidth = 1.60 m`, `frontWeightDistribution = 0.52`).
 - [`src/vehicle/WheelState.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/WheelState.h): Per-wheel state (`WheelState`) storing raycast contact, suspension compression/velocity/forces, slip ratio $\kappa$, slip angle $\alpha$, longitudinal/lateral tire forces, angular velocity $\omega$, rotation angle, and drive/brake torques.
 - [`src/vehicle/VehicleBody.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleBody.h) & [`VehicleBody.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleBody.cpp): Wraps the chassis `btRigidBody` + `btCompoundShape` (lower body box + upper greenhouse box offset relative to the configurable Center of Mass). Supports live CoM and mass updates (`syncMassProperties`), world-point force application (`applyForceAtWorldPoint`), and exact analytical + Bullet raycasting (`castRayExactWorld`).
 - [`src/vehicle/SuspensionSystem.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/SuspensionSystem.h) & [`SuspensionSystem.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/SuspensionSystem.cpp): Hooke spring ($F_s = -k \Delta x$), asymmetric bound/rebound damper ($c_{\text{bound}} \neq c_{\text{rebound}}$), progressive quadratic bump stop, and front/rear axle anti-roll bars (`computeAxleAntiRollForce`).
@@ -78,18 +83,18 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 ### `src/renderer/`, `shaders/`, `src/ui/`, `src/input/`, `src/app/`
 - [`src/renderer/Shader.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/Shader.h) & [`Shader.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/Shader.cpp): GLSL shader compiler/linker with uniform location caching.
 - [`src/renderer/Mesh.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/Mesh.h) & [`Mesh.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/Mesh.cpp): VAO/VBO/EBO procedural mesh generators (boxes, cylinders, rings, planes).
-- [`src/renderer/ModelLoaderGLB.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/ModelLoaderGLB.h) & [`ModelLoaderGLB.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/ModelLoaderGLB.cpp): Single-header `cgltf`-based binary glTF 2.0 / GLB loader. Parses multi-node hierarchies into OpenGL VAOs, maps nodes to semantic vehicle roles (Chassis, 4 independent wheel assemblies, calipers, steering wheel), parses PBR metallic/roughness & transparent glass materials, reads optional JSON manifests (`model/BMW_M4_manifest.json`), and automatically computes wheel rotation pivots.
+- [`src/renderer/ModelLoaderGLB.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/ModelLoaderGLB.h) & [`ModelLoaderGLB.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/ModelLoaderGLB.cpp): Single-header `cgltf`-based binary glTF 2.0 / GLB loader. Parses multi-node hierarchies into OpenGL VAOs, maps nodes to semantic vehicle roles (Chassis, 4 independent wheel assemblies, calipers, steering wheel), parses PBR metallic/roughness & transparent glass materials, reads optional JSON manifests (`model/BMW_M4_manifest.json`, `model/Dodge_Challenger_manifest.json`), supports embedded binary glTF textures, root scale & yaw rotation, and automatic multi-wheel quadrant partitioning (`ModelPartRole::Wheel_All`) for models whose wheels were authored as a single merged mesh.
 - [`src/renderer/ShadowMapFBO.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/ShadowMapFBO.h) & [`ShadowMapFBO.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/ShadowMapFBO.cpp): `2048x2048` depth framebuffer for directional sun shadows.
 - [`src/renderer/TrackRendererGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/TrackRendererGL.h) & [`TrackRendererGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/TrackRendererGL.cpp): Procedural grid/surface textures, Proving Ground meshes, 25m distance marker posts, and handling ring.
-- [`src/renderer/VehicleRendererGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/VehicleRendererGL.h) & [`VehicleRendererGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/VehicleRendererGL.cpp): Master vehicle renderer with hot-swapping between the Blender model (`BMW M4 Coupe`, 743,509 triangles across 58 chassis nodes + 4 articulated wheel assemblies) and the procedural sports coupe. Supports 2-pass rendering (opaque + transparent glass), reactive brake/reverse lights, suspension struts, and a 3D visual alignment debug overlay (`renderVisualDebug`).
+- [`src/renderer/VehicleRendererGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/VehicleRendererGL.h) & [`VehicleRendererGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/VehicleRendererGL.cpp): Master vehicle renderer with hot-swapping between multiple loaded 3D models (`BMW M4 Coupe`, `1970 Dodge Challenger R/T`, and the procedural sports coupe). Supports 2-pass rendering (opaque + transparent glass), reactive brake/reverse lights, suspension struts, and a 3D visual alignment debug overlay (`renderVisualDebug`).
 - [`src/renderer/DebugOverlayGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/DebugOverlayGL.h) & [`DebugOverlayGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/DebugOverlayGL.cpp): 3D force vector gizmos (normal load $F_z$, longitudinal $F_x$, lateral $F_y$, velocity vector, and CoM marker) + rear-wheel dynamic skidmarks.
 - [`src/renderer/CameraControllerGL.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/CameraControllerGL.h) & [`CameraControllerGL.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/renderer/CameraControllerGL.cpp): 4 camera modes (`Follow`, `Orbit`, `Suspension`, `Hood`).
-- [`src/ui/ImGuiDashboard.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/ui/ImGuiDashboard.h) & [`ImGuiDashboard.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/ui/ImGuiDashboard.cpp): Top bar (zone presets `1..7`, model toggle, camera/gizmo/telemetry toggles, physics verifier button), left live tuning panel (model switcher, alignment debug checkbox, 12 real-time sliders + drivetrain layout selector), right telemetry panel (force balance summary, 4-wheel table, 4-band real-time oscilloscope), and bottom instrument cluster (digital speedometer, RPM bar, pedal bars, G-G diagram).
+- [`src/ui/ImGuiDashboard.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/ui/ImGuiDashboard.h) & [`ImGuiDashboard.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/ui/ImGuiDashboard.cpp): Top bar (zone presets `1..7`, interactive car selection dropdown combo, camera/gizmo/telemetry toggles, physics verifier button), left live tuning panel (vehicle selection dropdown + radio buttons, alignment debug checkbox, 12 real-time sliders + drivetrain layout selector), right telemetry panel (force balance summary, 4-wheel table, 4-band real-time oscilloscope), and bottom instrument cluster (digital speedometer, RPM bar, pedal bars, G-G diagram).
 - [`src/input/ControllerConfig.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/ControllerConfig.h) & [`ControllerConfig.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/ControllerConfig.cpp): Logical vehicle action enum, Forza Horizon default mappings, Xbox/PlayStation/Nintendo button glyph adaptivity, and persistent JSON configuration (`settings/controller_config.json`).
 - [`src/input/VibrationManager.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/VibrationManager.h) & [`VibrationManager.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/VibrationManager.cpp): Dynamic Windows XInput force-feedback rumble pipeline. Purely event-driven haptics inspired by Forza Horizon: collision impacts with non-linear impulse scaling & lateral directionality, suspension events (jump landings, bump-stop bottom-out, sharp curb strikes), underside chassis scrape buzzing, smooth cosine envelope decay, and collision deduplication. Zero vibration from engine RPM, throttle, or smooth cruising.
-- [`src/input/InputControllerGLFW.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.h) & [`InputControllerGLFW.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.cpp): Progressive keyboard + baseline-calibrated multi-gamepad input handler with continuous analog steering, trigger normalization, right-stick look-around, interactive rebinding, and hotplugging.
+- [`src/input/InputControllerGLFW.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.h) & [`InputControllerGLFW.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.cpp): Progressive keyboard + baseline-calibrated multi-gamepad input handler with continuous analog steering, trigger normalization, right-stick look-around, interactive rebinding, hotplugging, and car cycling (`RB` / `B`).
 - [`src/app/Application.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/Application.h), [`Application.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/Application.cpp), [`main.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/main.cpp): Lifecycle manager and CLI entry point (`--smoke-test`, `--diag`).
-- [`tests/native_validation_tests.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/tests/native_validation_tests.cpp): 27 automated test suites (`Unit 1–14`, `Validation Tests A–J`, `Controlled Tests 1–3`).
+- [`tests/native_validation_tests.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/tests/native_validation_tests.cpp): 28 automated test suites (`Unit 1–15`, `Validation Tests A–J`, `Controlled Tests 1–3`).
 
 ---
 
@@ -134,11 +139,24 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
      - **Lateral Directionality:** Left-side impacts bias toward the left vibration motor; right-side impacts bias toward the right motor.
      - **Decay & Controls:** Cosine envelope decay with master intensity, collision sensitivity, and suspension sensitivity sliders in ImGui and `settings/controller_config.json`.
 
+8. **Atmospheric Environment Overhaul & Graphics Quality Presets:**
+   - **Atmospheric Sky Dome & Color Calibration (`SkyRendererGL`):** Renders a procedural daytime sky dome at far clip depth ($z = w$, `GL_LEQUAL`, `glDepthMask(GL_FALSE)`). Calibrated Rayleigh scattering constants produce rich sapphire zenith (`rgb(0.04, 0.16, 0.65)`), clear azure mid-sky (`rgb(0.12, 0.38, 0.85)`), and luminous cerulean horizon blue (`rgb(0.38, 0.62, 0.94)`) with zero dull gray haze. Mie scattering models a sharp solar disc and multi-octave aureole corona.
+   - **Double Gamma Elimination:** The Narkowicz ACES filmic tone reproduction curve (`acesToneMap`) natively maps linear HDR inputs to non-linear sRGB display output. Applying an extra `pow(x, 1/2.2)` on top resulted in double gamma compression (lifting dark shadows to 0.13 gray, flattening contrast, and washing out color saturation). Removing the redundant second gamma pass across both `phong_shadow.frag` and `sky.frag` restored deep, vibrant colors and authentic contrast.
+   - **glTF Decal Alpha Compositing:** Vehicle liveries with transparent backgrounds (e.g. BMW M4 M-stripes and decals) blend over underlying body paint via `mix(uBaseColor, texCol.rgb, texCol.a)` rather than multiplicative blending (`albedo *= texCol.rgb; alpha *= texCol.a;`), preventing transparent decal boundaries from turning body paint black or invisible.
+   - **Foreground Fog Exclusion (0–400m):** Distance fog starts strictly at $400\text{ m}$ (`fogDist = max(dist - 400.0, 0.0)`), leaving the vehicle, straightaway, skidpad, and track markers 100% fog-free and razor sharp. Beyond $400\text{ m}$, distant terrain skirts smoothly and seamlessly dissolve into the sky dome horizon using tonemapped horizon color (`acesToneMap(uFogColor * exposure)`).
+   - **PBR Direct Light Energy Balance:** Direct diffuse lighting preserves unscaled sunlight irradiance ($L_o = (1 - k_S) \cdot \text{diffuse} \cdot \vec{L}_{\text{sun}} \cdot (\vec{N} \cdot \vec{L})$), avoiding rogue $1/\pi$ light reduction when sun color is supplied as illuminance, and automotive metallic paint basecoat diffuse is preserved under clearcoat (`diffuseColor = albedo * (1.0 - metalness * 0.75)`).
+   - **Graphics Quality Presets (`GraphicsQuality`):**
+     - **`Maximum`:** Full atmospheric Rayleigh/Mie sky dome, $2048 \times 2048$ shadow map with 8-tap Poisson disk PCF filtering, full HDR IBL reflections + diffuse irradiance, anti-banding dither, and expansive horizon skirt.
+     - **`High`:** Baseline environment, $2048 \times 2048$ shadow map with 4-tap Poisson disk PCF, standard IBL, atmospheric sky dome.
+     - **`Medium`:** Performance-balanced, $1024 \times 1024$ shadow map with fast 2-tap PCF, 3-stop sky gradient, basic IBL.
+     - **`Low`:** Fast fallback, dynamic shadows disabled, fast 2-stop sky gradient, hemispherical ambient lighting without expensive IBL texture lookups.
+   - **Runtime Hot-Swapping:** Live switching via Dear ImGui top-bar combo box with zero memory leaks, shader recompile hitches, or GPU stalls.
+
 ---
 
-## 6. Verified Physical Benchmarks (`27 / 27` Suites Passing)
+## 6. Verified Physical Benchmarks (`28 / 28` Suites Passing)
 
-Any future code change must keep all 27 suites in `.\build\Release\TorqueLabNativeTests.exe` green:
+Any future code change must keep all 28 suites in `.\build\Release\TorqueLabNativeTests.exe` green:
 
 - **Static Equilibrium (`Test A`):** $\sum F_z = 14715.0\text{ N}$ ($0.000\%$ error vs $mg = 1500 \times 9.81 = 14715.0\text{ N}$), ride height $= 0.4910\text{ m}$, suspension compression $= 0.1093\text{ m}$.
 - **Full-Throttle Launch (`Test B` & `--diag`):**
@@ -154,7 +172,23 @@ Any future code change must keep all 27 suites in `.\build\Release\TorqueLabNati
 
 ---
 
-## 7. Vehicle Configuration, Materials & Collision System Architecture
+## 8. Automated Compile-Time & Runtime Collision Baking Pipeline
+
+1. **Automatic Build-Time Collision Generation (`CMakeLists.txt` Post-Build Custom Command):**
+   - Whenever compiling (`cmake --build build --config Release`), CMake runs a post-build step: `TorqueLabNative --bake-collisions`.
+   - The baker operates **100% headlessly on pure CPU** (`loadGpuResources = false` in `ModelLoaderGLB::loadFromFile`), requiring zero OpenGL or window initialization.
+   - It scans `model/` for all `.glb` and `.gltf` files, checking their timestamps against `model/cache/<vehicle_id>_collision.json`.
+   - If a model is new or was recently modified/exported from Blender (`last_write_time(glb) > last_write_time(cache)` or companion manifest was updated), it automatically executes volumetric convex decomposition (`btConvexHullComputer` / V-HACD), derives vehicle metrics (wheelbase, track width, wheel radius, ground clearance), writes the updated JSON cache, and syncs it to the build output directory.
+   - If up-to-date, it skips re-computation in $<1\text{ ms}$.
+
+2. **Runtime Stale Cache Invalidation:**
+   - At runtime, `VehicleCollisionGenerator::generateFromModel()` executes the same timestamp validation. If a user modifies or drops in a `.glb` while running or between runs without recompiling, the game detects the stale cache and regenerates it on the fly.
+
+3. **Dynamic Multi-Vehicle Auto-Discovery & Selection:**
+   - `VehicleRendererGL::init()` dynamically scans `model/` for all `.glb` files and registers them into `m_availableVehicles` alongside `"procedural_coupe"`.
+   - The Dear ImGui top-bar dropdown combo, left tuning panel combo, and radio buttons dynamically render all discovered vehicles.
+   - Gamepad `RB` and Keyboard `B` dynamically cycle through all available vehicles.
+   - Any newly added car model immediately receives physical collision hulls, derived wheel centers, wheelbase, and track width without requiring hardcoded vehicle configurations. Custom powertrain/mass parameters can be live-tuned and saved to `model/<id>_vehicle.json`.
 
 1. **Decoupled Vehicle Configuration System (`VehicleConfig.h` / `VehicleConfig.cpp`):**
    - Pure physical parameters (`mass`, `wheelbase`, `trackWidth`, `inertiaTensor`, spring/damper rates, drivetrain, brakes) are decoupled from rendering models.
@@ -191,3 +225,66 @@ Any future code change must keep all 27 suites in `.\build\Release\TorqueLabNati
    - Automatically serializes and caches generated convex hulls to `model/cache/<vehicle_id>_collision.json` (cache version 5) for instantaneous subsequent loads ($<1\text{ ms}$).
    - 3D Wireframe Overlay (`DebugOverlayGL`) renders each convex child hull with distinct vibrant colors (emerald, cyan, amber, purple, pink, blue, lime, red) for clear visual inspection.
    - Real-time diagnostic telemetry and manual re-generation buttons are integrated into `ImGuiDashboard`.
+
+
+---
+
+## 9. Complete glTF 2.0 PBR Material, Texture Pipeline & IBL Lighting Engine
+
+1. **Full glTF 2.0 Metallic-Roughness Asset Importer (`ModelLoaderGLB.cpp`):**
+   - **Preservation of Authentic PBR Properties:** Reads `base_color_factor`, `metallic_factor`, `roughness_factor`, `emissive_factor`, and alpha modes (`Opaque`, `Mask`, `Blend`) directly from source glTF meshes. Eliminated destructive hardcoded overrides that previously forced all materials to Alpine White.
+   - **Complete Texture Channel Resolution:** Resolves and caches embedded binary glTF textures (`bufferView`) and external textures across all standard channels:
+     - Unit 0: **Base Color / Albedo** (`GL_SRGB8_ALPHA8`, sRGB color space)
+     - Unit 1: **Directional Shadow Map** (`GL_DEPTH_COMPONENT24`, depth)
+     - Unit 2: **HDR Environment Panoramic Map** (`GL_RGBA8` / sRGB, IBL)
+     - Unit 3: **Tangent-Space Normal Map** (`GL_RGBA8`, Linear space) with `normalScale`
+     - Unit 4: **Metallic-Roughness Map** (`GL_RGBA8`, Linear space; Green = Roughness, Blue = Metalness)
+     - Unit 5: **Ambient Occlusion Map** (`GL_RGBA8`, Linear space; Red = AO) with `occlusionStrength`
+     - Unit 6: **Emissive Map** (`GL_SRGB8_ALPHA8`, sRGB color space)
+   - **Orthonormal Tangent Generation (`Mesh::computeTangents`):** Automatically computes smooth orthogonal tangents ($\vec{T}$) and bitangent handedness signs ($tw \in \{-1.0, 1.0\}$) across indexed triangle meshes using Gram-Schmidt orthogonalization when assets lack pre-authored tangents.
+
+2. **Cook-Torrance Microfacet GGX PBR Shader Pipeline (`phong_shadow.vert` / `phong_shadow.frag`):**
+   - Replaced legacy empirical Blinn-Phong lighting with industry-standard metallic-roughness BRDF:
+     - **Normal Distribution Function (NDF):** Trowbridge-Reitz GGX ($D = \frac{\alpha^2}{\pi ((N \cdot H)^2 (\alpha^2 - 1) + 1)^2}$ where $\alpha = \text{roughness}^2$).
+     - **Geometric Shadowing:** Smith-Schlick GGX ($G = G_1(N, V) \cdot G_1(N, L)$).
+     - **Fresnel Reflectance:** Fresnel-Schlick ($F_0 = \text{mix}(0.04, \text{albedo}, \text{metalness})$) with roughness attenuation.
+     - **Energy Conservation:** $k_D = (1 - F) \cdot (1 - \text{metalness})$ balances diffuse and specular lobes.
+     - **Tangent-Space Normal Mapping:** Evaluates $3 \times 3$ TBN matrix with two-sided normal inversion (`gl_FrontFacing`).
+
+3. **High-Dynamic-Range Environment Map & IBL (`EnvironmentMapGL`):**
+   - Procedural automotive HDR environment panoramic texture ($512 \times 256$) featuring atmospheric sky gradient, sun corona, and 3 overhead studio softbox light banks that highlight vehicle body curvature and shoulder creases.
+   - Trilinear mipmap filtering (`glGenerateMipmap(GL_TEXTURE_2D)`) maps surface `roughness` directly to reflection blur ($LOD = \text{roughness} \times \text{maxLod}$).
+   - Diffuse irradiance ambient integration combined with ACES filmic tone reproduction and gamma 2.2 linear workflow.
+
+4. **Real-Time PBR Material Inspector & Diagnostics Panel (`ImGuiDashboard`):**
+   - 9 real-time shading diagnostic modes: Full PBR Lit, Albedo, Metalness, Roughness, Shading Normals, Ambient Occlusion, Emissive, Tangents, and Environment Specular.
+   - Real-time Exposure ($0.2\text{--}3.0$) and IBL Multiplier ($0.0\text{--}3.0$) sliders.
+   - Interactive breakdown table displaying all distinct materials in the active model, complete with live color swatches, roughness/metalness parameters, and texture map badges (`[Alb]`, `[Nrm]`, `[Met-Rough]`, `[AO]`, `[Ems]`, `[Blend]`, `[Mask]`, `[2-Sided]`).
+
+
+---
+
+## 10. Volumetric Tyre Collision, Kinematic Wheel Cylinders & Dynamic Geometry Derivation
+
+1. **Volumetric Circumferential & Lateral Tire Collision Pipeline (`VehicleDynamics.cpp`):**
+   - Replaced legacy 1D single-point raycasts with multi-point volumetric envelope contact queries: 27 circumferential and lateral probe vectors spanning outer tyre radius $R$ and tread width $W$ across inner shoulder (-40%), center (0%), and outer shoulder (+40%) slices.
+   - Forward approach arc ($\theta \in [0^\circ..40^\circ]$) detects curbs, raised platforms, stones, and steps before the axle center reaches the obstacle ($Z_{\text{contact}} > Z_{\text{axle}}$).
+   - Rear departure arc ($\theta \in [-25^\circ..0^\circ]$) provides continuous tire support when descending from raised ledges and ramps without abrupt drops.
+   - Calculates effective circumferential contact normal $\vec{n} = \cos(\theta)\vec{u}_{\text{up}} - \sin(\theta)\vec{u}_{\text{fwd}}$, applying horizontal obstacle resistance force ($F_{\text{obs}}$) opposing forward travel into the obstacle, and drive-wheel climbing traction ($F_{\text{climb}}$) pulling the wheel up and over steps under throttle.
+
+2. **Dedicated Physical Wheel Collision Objects (`btCylinderShapeX`):**
+   - Removed static/frozen wheel hulls from the chassis `btCompoundShape`, eliminating rigid collision interference and obstacle snagging.
+   - Created 4 dedicated Bullet collision objects using `btCylinderShapeX(wWidth * 0.5, wRadius, wRadius)`. In Torque Lab local frame ($+X$ Left, $+Y$ Up, $+Z$ Forward), the cylinder central axis along $+X$ aligns with the wheel rotation axle with zero rotational offset.
+   - Flagged with `btCollisionObject::CF_NO_CONTACT_RESPONSE` and broadphase mask `btBroadphaseProxy::StaticFilter` so Bullet's dynamic solver never applies unwanted contact impulses or constraints to the chassis rigid body.
+   - Exact world transforms ($T_{\text{wheel}} = \text{pos} + \text{rot}$) synchronized at 120 Hz with suspension stroke and Ackermann steering rotation.
+   - `castRayExactWorld` and `ExcludeVehicleRayCallback` explicitly ignore all 4 wheel collision objects to ensure raycasts find the terrain and obstacle geometry with zero self-occlusion.
+
+3. **Generic Model-Derived Wheel Geometry & Per-Axle Fitment (`ModelLoaderGLB.cpp`, `VehicleCollisionGenerator.cpp`, `VehicleConfig.cpp`):**
+   - Wheel radius ($R$), width ($W$), pivot center, and track width are derived directly from actual 3D mesh vertex bounding boxes across model parts tagged with `ModelPartRole::Wheel_*`.
+   - Populates per-axle dimensions: `frontTrackWidth`, `rearTrackWidth`, `frontWheelRadius`, `rearWheelRadius`, `frontWheelWidth`, and `rearWheelWidth`, supporting staggered front/rear fitments.
+   - Automatically serialized and deserialized to/from JSON in vehicle configurations.
+
+4. **3D Collision Wireframe & Telemetry Visualization (`DebugOverlayGL.cpp`, `ImGuiDashboard.cpp`):**
+   - Wireframe cylinder rendering (`addCylinderXWireframe`) dynamically renders the exact physical `btCylinderShapeX` for each wheel at its true simulated position, compression, and steering angle in distinct Cyan (front) and Amber (rear) colors.
+   - Visualizes circumferential obstacle contact points, resistance force arrows, and climbing traction vectors.
+   - Interactive 4-wheel telemetry table highlights obstacle contact with live hit angle and force metrics.

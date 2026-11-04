@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include "app/Application.h"
+#include "physics/VehicleCollisionGenerator.h"
 #include "vehicle/Drivetrain.h"
 
 namespace {
@@ -73,13 +74,25 @@ void runFullPipelineDiagnostics() {
 int main(int argc, char** argv) {
     bool smokeTest = false;
     bool runDiag = false;
+    bool bakeCollisions = false;
+    bool forceBake = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--smoke-test") {
             smokeTest = true;
         } else if (arg == "--diag") {
             runDiag = true;
+        } else if (arg == "--bake-collisions" || arg == "-b") {
+            bakeCollisions = true;
+        } else if (arg == "--force-bake") {
+            bakeCollisions = true;
+            forceBake = true;
         }
+    }
+
+    if (bakeCollisions) {
+        const int count = torquelab::VehicleCollisionGenerator::bakeAllModelCollisions("model", forceBake);
+        return (count >= 0) ? 0 : 1;
     }
 
     torquelab::Application app;

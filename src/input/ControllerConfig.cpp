@@ -1,6 +1,7 @@
 #include "input/ControllerConfig.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>

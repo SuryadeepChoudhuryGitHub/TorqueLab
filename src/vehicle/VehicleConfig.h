@@ -58,11 +58,30 @@ struct VehicleConfig {
     // --- Chassis & Wheel Geometry ---
     double wheelbase{2.70};                 // Distance between front and rear axles (m)
     double trackWidth{1.60};                // Lateral distance between left and right wheels (m)
+    double frontTrackWidth{1.60};           // Front axle track width (m)
+    double rearTrackWidth{1.60};            // Rear axle track width (m)
     Vec3 chassisHalfExtents{0.88, 0.36, 2.18}; // Collision half-extents (m): 1.76m wide, 0.72m tall, 4.36m long
     double suspensionMountHeight{0.10};     // Height of upper suspension mount in chassis frame (m)
     double wheelRadius{0.32};               // Tire outer radius (m)
+    double frontWheelRadius{0.32};          // Front tire outer radius (m)
+    double rearWheelRadius{0.32};           // Rear tire outer radius (m)
     double wheelWidth{0.235};               // Tire width (m)
+    double frontWheelWidth{0.235};          // Front tire width (m)
+    double rearWheelWidth{0.235};           // Rear tire width (m)
     double wheelInertia{1.15};              // Rotational inertia of a single wheel assembly (kg*m^2)
+    bool hasExplicitWheelMounts{false};     // True if exact mount positions are derived from 3D model vertices
+    std::array<Vec3, 4> explicitWheelMountsLocal{
+        Vec3{ 0.80, 0.10,  1.35},
+        Vec3{-0.80, 0.10,  1.35},
+        Vec3{ 0.80, 0.10, -1.35},
+        Vec3{-0.80, 0.10, -1.35}
+    };
+    std::array<Vec3, 4> explicitWheelCentersLocal{
+        Vec3{ 0.80, -0.28,  1.35},
+        Vec3{-0.80, -0.28,  1.35},
+        Vec3{ 0.80, -0.28, -1.35},
+        Vec3{-0.80, -0.28, -1.35}
+    };
 
     // --- Suspension & Anti-Roll Bars ---
     double suspensionRestLength{0.38};      // Uncompressed spring rest length (m)
@@ -136,6 +155,7 @@ struct VehicleConfig {
 /** Built-in vehicle presets */
 VehicleConfig createProceduralCoupeConfig();
 VehicleConfig createBmwM4Config();
+VehicleConfig createDodgeChallengerConfig();
 
 inline VehicleConfig createDefaultVehicleConfig() {
     return createProceduralCoupeConfig();
@@ -145,16 +165,36 @@ inline VehicleConfig createDefaultVehicleConfig() {
 bool saveVehicleConfigToJson(const VehicleConfig& cfg, const std::string& filePath);
 bool loadVehicleConfigFromJson(VehicleConfig& outCfg, const std::string& filePath);
 
+/** Helper to access per-wheel radius (supporting front/rear staggered fitment) */
+inline double getWheelRadius(const VehicleConfig& config, int wheelIndex) {
+    if (wheelIndex < 2) {
+        return (config.frontWheelRadius > 0.05) ? config.frontWheelRadius : config.wheelRadius;
+    }
+    return (config.rearWheelRadius > 0.05) ? config.rearWheelRadius : config.wheelRadius;
+}
+
+/** Helper to access per-wheel width (supporting front/rear staggered fitment) */
+inline double getWheelWidth(const VehicleConfig& config, int wheelIndex) {
+    if (wheelIndex < 2) {
+        return (config.frontWheelWidth > 0.05) ? config.frontWheelWidth : config.wheelWidth;
+    }
+    return (config.rearWheelWidth > 0.05) ? config.rearWheelWidth : config.wheelWidth;
+}
+
 /** Local mount positions */
 inline std::array<Vec3, 4> getWheelMountPositionsLocal(const VehicleConfig& config) {
-    const double halfTrack = config.trackWidth * 0.5;
-    const double halfWheelbase = config.wheelbase * 0.5;
+    if (config.hasExplicitWheelMounts) {
+        return config.explicitWheelMountsLocal;
+    }
+    const double halfTrackFront = (config.frontTrackWidth > 0.0 ? config.frontTrackWidth : config.trackWidth) * 0.5;
+    const double halfTrackRear  = (config.rearTrackWidth > 0.0  ? config.rearTrackWidth  : config.trackWidth) * 0.5;
+    const double halfWheelbase  = config.wheelbase * 0.5;
     const double y = config.suspensionMountHeight;
     return {
-        Vec3{+halfTrack, y, +halfWheelbase}, // 0: FL
-        Vec3{-halfTrack, y, +halfWheelbase}, // 1: FR
-        Vec3{+halfTrack, y, -halfWheelbase}, // 2: RL
-        Vec3{-halfTrack, y, -halfWheelbase}  // 3: RR
+        Vec3{+halfTrackFront, y, +halfWheelbase}, // 0: FL
+        Vec3{-halfTrackFront, y, +halfWheelbase}, // 1: FR
+        Vec3{+halfTrackRear,  y, -halfWheelbase}, // 2: RL
+        Vec3{-halfTrackRear,  y, -halfWheelbase}  // 3: RR
     };
 }
 

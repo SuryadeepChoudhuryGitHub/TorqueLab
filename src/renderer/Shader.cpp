@@ -169,19 +169,68 @@ void Shader::applyMaterial(const MaterialProps& mat) {
     setFloat("uRoughness", mat.roughness);
     setFloat("uMetalness", mat.metalness);
     setFloat("uOpacity", mat.opacity);
+    setFloat("uNormalScale", mat.normalScale);
+    setFloat("uOcclusionStrength", mat.occlusionStrength);
+    setInt("uAlphaMode", static_cast<int>(mat.alphaMode));
+    setFloat("uAlphaCutoff", mat.alphaCutoff);
+    setInt("uDoubleSided", mat.doubleSided ? 1 : 0);
     setInt("uReceiveShadows", mat.receiveShadows ? 1 : 0);
     setInt("uUnlit", mat.unlit ? 1 : 0);
+    setVec2("uUvScale", mat.uvScaleX, mat.uvScaleY);
 
+    // Unit 0: Albedo / Base Color Map (sRGB)
     if (mat.textureId != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mat.textureId);
         setInt("uAlbedoMap", 0);
+        setInt("uHasAlbedoMap", 1);
         setInt("uUseTexture", 1);
-        setVec2("uUvScale", mat.uvScaleX, mat.uvScaleY);
     } else {
+        setInt("uHasAlbedoMap", 0);
         setInt("uUseTexture", 0);
-        setVec2("uUvScale", 1.0f, 1.0f);
     }
+
+    // Unit 3: Tangent-Space Normal Map (Linear)
+    if (mat.normalMapId != 0) {
+        glActiveTexture(GL_TEXTURE0 + 3);
+        glBindTexture(GL_TEXTURE_2D, mat.normalMapId);
+        setInt("uNormalMap", 3);
+        setInt("uHasNormalMap", 1);
+    } else {
+        setInt("uHasNormalMap", 0);
+    }
+
+    // Unit 4: Metallic (Blue) + Roughness (Green) Map (Linear)
+    if (mat.metallicRoughnessMapId != 0) {
+        glActiveTexture(GL_TEXTURE0 + 4);
+        glBindTexture(GL_TEXTURE_2D, mat.metallicRoughnessMapId);
+        setInt("uMetallicRoughnessMap", 4);
+        setInt("uHasMetallicRoughnessMap", 1);
+    } else {
+        setInt("uHasMetallicRoughnessMap", 0);
+    }
+
+    // Unit 5: Ambient Occlusion Map (Red) (Linear)
+    if (mat.occlusionMapId != 0) {
+        glActiveTexture(GL_TEXTURE0 + 5);
+        glBindTexture(GL_TEXTURE_2D, mat.occlusionMapId);
+        setInt("uOcclusionMap", 5);
+        setInt("uHasOcclusionMap", 1);
+    } else {
+        setInt("uHasOcclusionMap", 0);
+    }
+
+    // Unit 6: Emissive Map (sRGB)
+    if (mat.emissiveMapId != 0) {
+        glActiveTexture(GL_TEXTURE0 + 6);
+        glBindTexture(GL_TEXTURE_2D, mat.emissiveMapId);
+        setInt("uEmissiveMap", 6);
+        setInt("uHasEmissiveMap", 1);
+    } else {
+        setInt("uHasEmissiveMap", 0);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
 }
 
 } // namespace torquelab

@@ -33,6 +33,7 @@ enum class ModelPartRole {
     Wheel_FR,        // Front-Right wheel assembly (rotates + steers)
     Wheel_RL,        // Rear-Left wheel assembly (rotates with drive torque)
     Wheel_RR,        // Rear-Right wheel assembly (rotates with drive torque)
+    Wheel_All,       // Merged wheel primitive containing all 4 wheels (auto-partitioned by quadrant)
     BrakeCaliper_FL, // Front-Left brake caliper (steers, does not rotate)
     BrakeCaliper_FR, // Front-Right brake caliper (steers, does not rotate)
     BrakeCaliper_RL, // Rear-Left brake caliper (non-steering, does not rotate)
@@ -78,6 +79,8 @@ struct LoadedVehicleModel {
         Vec3{ 0.77, 0.36, -1.23}, // RL
         Vec3{-0.77, 0.36, -1.23}  // RR
     };
+    std::array<double, 4> modelWheelRadii{0.30, 0.30, 0.30, 0.30};
+    std::array<double, 4> modelWheelWidths{0.24, 0.24, 0.24, 0.24};
     std::array<bool, 4> wheelsIdentified{false, false, false, false};
 
     // Model bounding box (overall and chassis only)
@@ -95,6 +98,9 @@ struct LoadedVehicleModel {
     size_t totalTriangles{0};
     std::vector<std::string> diagnosticWarnings;
 
+    // Retained unique materials for visual diagnostics and inspection
+    std::vector<MaterialProps> uniqueMaterials;
+
     // OpenGL texture resources owned by this model
     std::vector<std::unique_ptr<Texture2D>> loadedTextures;
 };
@@ -108,7 +114,8 @@ public:
     static bool loadFromFile(
         const std::string& glbFilePath,
         LoadedVehicleModel& outModel,
-        const std::string& manifestFilePath = ""
+        const std::string& manifestFilePath = "",
+        bool loadGpuResources = true
     );
 
     /**

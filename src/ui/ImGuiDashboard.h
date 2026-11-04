@@ -17,6 +17,7 @@
 namespace torquelab {
 
 class InputControllerGLFW;
+struct LoadedVehicleModel;
 
 struct DashboardCallbacks {
     std::function<void()> onReset;
@@ -61,14 +62,27 @@ public:
         const std::string& modelName = "BMW M4 Coupe",
         bool visualDebugEnabled = false,
         bool collisionWireframeEnabled = true,
-        InputControllerGLFW* inputController = nullptr
+        InputControllerGLFW* inputController = nullptr,
+        const LoadedVehicleModel* activeModel = nullptr,
+        float* exposure = nullptr,
+        float* iblIntensity = nullptr,
+        int* diagnosticMode = nullptr
     );
 
     void showValidationReport(const std::string& message, bool isSuccess = true);
 
+    struct VehicleOption {
+        std::string id;
+        std::string name;
+    };
+    void setAvailableVehicles(std::vector<VehicleOption> vehicles) {
+        m_availableVehicles = std::move(vehicles);
+    }
+
     bool telemetryEnabled{true};
 
 private:
+    std::vector<VehicleOption> m_availableVehicles;
     struct TelemetrySample {
         float speedKmh{0.0f};
         float longAccel{0.0f};
@@ -79,6 +93,7 @@ private:
     };
 
     void renderTopBar(
+        const std::string& vehicleId,
         bool paused,
         const std::string& cameraLabel,
         bool gizmosEnabled,
@@ -96,7 +111,11 @@ private:
         const std::string& modelName,
         bool visualDebugEnabled,
         bool collisionWireframeEnabled,
-        InputControllerGLFW* inputController
+        InputControllerGLFW* inputController,
+        const LoadedVehicleModel* activeModel = nullptr,
+        float* exposure = nullptr,
+        float* iblIntensity = nullptr,
+        int* diagnosticMode = nullptr
     );
     void renderControllerSettings(InputControllerGLFW* inputController);
     void renderRightTelemetryPanel(

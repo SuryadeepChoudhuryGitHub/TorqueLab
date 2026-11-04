@@ -106,6 +106,10 @@ public:
         const Quat& spawnRotation = quatIdentity(),
         const GeneratedVehicleCollision* collision = nullptr
     );
+    ~VehicleDynamics();
+
+    VehicleDynamics(const VehicleDynamics&) = delete;
+    VehicleDynamics& operator=(const VehicleDynamics&) = delete;
 
     /** Captures current chassis and wheel transforms before stepping for smooth render interpolation. */
     void capturePreviousTransforms();
@@ -125,6 +129,14 @@ public:
     /** Returns a complete snapshot of vehicle telemetry for HUD, graphs, and automated tests. */
     VehicleTelemetrySnapshot getTelemetrySnapshot() const;
 
+    /** Access to the 4 physical Bullet collision shapes and objects representing the wheels */
+    const btCollisionObject* getWheelCollisionObject(int i) const {
+        return (i >= 0 && i < 4) ? m_wheelCollisionObjects[static_cast<size_t>(i)].get() : nullptr;
+    }
+    const btCylinderShapeX* getWheelCylinderShape(int i) const {
+        return (i >= 0 && i < 4) ? m_wheelCylinderShapes[static_cast<size_t>(i)].get() : nullptr;
+    }
+
     VehicleConfig config;
     VehicleBody body;
     std::array<WheelState, 4> wheels;
@@ -136,11 +148,16 @@ public:
 
 private:
     Quat computeWheelWorldOrientation(const Quat& chassisRot, const WheelState& w) const;
+    void syncWheelCollisionObjects();
 
     btDiscreteDynamicsWorld* m_world{nullptr};
     SurfaceSystem* m_surfaceSystem{nullptr};
     Vec3 m_initialSpawnPos{0.0, 0.55, 0.0};
     Quat m_initialSpawnRot{0.0, 0.0, 0.0, 1.0};
+
+    // Dedicated 3D physical collision shapes and objects representing the 4 vehicle wheels
+    std::array<std::unique_ptr<btCylinderShapeX>, 4> m_wheelCylinderShapes;
+    std::array<std::unique_ptr<btCollisionObject>, 4> m_wheelCollisionObjects;
 
     Vec3 m_prevChassisPos{0.0, 0.0, 0.0};
     Quat m_prevChassisRot{0.0, 0.0, 0.0, 1.0};

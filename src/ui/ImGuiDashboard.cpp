@@ -1,4 +1,5 @@
 #include "ui/ImGuiDashboard.h"
+#include "renderer/ModelLoaderGLB.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -86,7 +87,11 @@ void ImGuiDashboard::render(
     const std::string& modelName,
     bool visualDebugEnabled,
     bool collisionWireframeEnabled,
-    InputControllerGLFW* inputController
+    InputControllerGLFW* inputController,
+    const LoadedVehicleModel* activeModel,
+    float* exposure,
+    float* iblIntensity,
+    int* diagnosticMode
 ) {
     if (!paused) {
         m_history.push_back(TelemetrySample{
@@ -111,8 +116,8 @@ void ImGuiDashboard::render(
         m_validationToastTimer = std::max(0.0, m_validationToastTimer - (1.0 / std::max(10.0, fps)));
     }
 
-    renderTopBar(paused, cameraLabel, gizmosEnabled, currentQuality, windowWidth, useImportedModel, hasImportedModel, visualDebugEnabled);
-    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled, collisionWireframeEnabled, inputController);
+    renderTopBar(vehicle.config.id, paused, cameraLabel, gizmosEnabled, currentQuality, windowWidth, useImportedModel, hasImportedModel, visualDebugEnabled);
+    renderLeftPanels(vehicle, windowHeight, useImportedModel, hasImportedModel, modelName, visualDebugEnabled, collisionWireframeEnabled, inputController, activeModel, exposure, iblIntensity, diagnosticMode);
     if (telemetryEnabled) {
         renderRightTelemetryPanel(snap, fps, physicsStepTimeMs, windowWidth, windowHeight);
     }
@@ -139,6 +144,7 @@ void ImGuiDashboard::render(
 }
 
 void ImGuiDashboard::renderTopBar(
+    const std::string& vehicleId,
     bool paused,
     const std::string& cameraLabel,
     bool gizmosEnabled,
@@ -204,23 +210,43 @@ void ImGuiDashboard::renderTopBar(
         if (gizmosEnabled) ImGui::PopStyleColor();
         ImGui::SameLine();
 
-        // Vehicle 3D Model Switcher Button (B)
-        if (hasImportedModel) {
-            if (useImportedModel) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x4f46e5, 0.95f));
-            const char* modelBtn = useImportedModel ? "Model: BMW M4 (B)" : "Model: Procedural (B)";
-            if (ImGui::SmallButton(modelBtn)) {
-                if (m_callbacks.onToggleImportedModel) m_callbacks.onToggleImportedModel(!useImportedModel);
-            }
-            if (useImportedModel) ImGui::PopStyleColor();
-            ImGui::SameLine();
-
-            if (visualDebugEnabled) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x0891b2, 0.95f));
-            if (ImGui::SmallButton("Align Debug (V)")) {
-                if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
-            }
-            if (visualDebugEnabled) ImGui::PopStyleColor();
-            ImGui::SameLine();
+        // Vehicle Dropdown Selector (Top Bar)
+        ImGui::SetNextItemWidth(170.0f);
+        std::vector<VehicleOption> topVehicleList = m_availableVehicles;
+        if (topVehicleList.empty()) {
+            topVehicleList = {
+                {"bmw_m4", "BMW M4 Coupe"},
+                {"dodge_challenger", "Dodge Challenger R/T"},
+                {"procedural_coupe", "Procedural Sports Coupe"}
+            };
         }
+
+        int topCarIdx = 0;
+        std::vector<const char*> carNames;
+        carNames.reserve(topVehicleList.size());
+        for (size_t i = 0; i < topVehicleList.size(); ++i) {
+            carNames.push_back(topVehicleList[i].name.c_str());
+            if (topVehicleList[i].id == vehicleId) {
+                topCarIdx = static_cast<int>(i);
+            }
+        }
+
+        if (ImGui::Combo("##TopCarSelect", &topCarIdx, carNames.data(), static_cast<int>(carNames.size()))) {
+            if (m_callbacks.onSelectVehicle && topCarIdx >= 0 && topCarIdx < static_cast<int>(topVehicleList.size())) {
+                m_callbacks.onSelectVehicle(topVehicleList[static_cast<size_t>(topCarIdx)].id);
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Select active vehicle or cycle with (B) / Gamepad (RB)");
+        }
+        ImGui::SameLine();
+
+        if (visualDebugEnabled) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x0891b2, 0.95f));
+        if (ImGui::SmallButton("Align Debug (V)")) {
+            if (m_callbacks.onToggleVisualDebug) m_callbacks.onToggleVisualDebug();
+        }
+        if (visualDebugEnabled) ImGui::PopStyleColor();
+        ImGui::SameLine();
 
         if (telemetryEnabled) ImGui::PushStyleColor(ImGuiCol_Button, hexToImVec4(0x0284c7, 0.95f));
         if (ImGui::SmallButton("Telemetry (T)")) {
@@ -236,13 +262,22 @@ void ImGuiDashboard::renderTopBar(
         ImGui::PopStyleColor();
         ImGui::SameLine();
 
-        ImGui::SetNextItemWidth(105.0f);
+        ImGui::SetNextItemWidth(130.0f);
         int qIdx = static_cast<int>(currentQuality);
-        const char* qItems[] = {"Quality: High", "Quality: Med", "Quality: Low"};
-        if (ImGui::Combo("##Quality", &qIdx, qItems, 3)) {
+        const char* qItems[] = {"Quality: Low", "Quality: Med", "Quality: High", "Quality: Max"};
+        if (ImGui::Combo("##Quality", &qIdx, qItems, 4)) {
             if (m_callbacks.onChangeQuality) {
                 m_callbacks.onChangeQuality(static_cast<GraphicsQuality>(qIdx));
             }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Graphics Quality Preset:\n"
+                "- Maximum: Atmospheric blue sky dome, 2048x2048 9-tap PCF shadows, HDR IBL, horizon terrain\n"
+                "- High: Baseline environment, 2048x2048 4-tap PCF shadows, standard IBL\n"
+                "- Medium: Balanced performance, 1024x1024 2-tap PCF shadows, simplified sky\n"
+                "- Low: Lightweight fallback, shadows disabled, fast 2-stop sky gradient"
+            );
         }
     }
     ImGui::End();
@@ -256,7 +291,11 @@ void ImGuiDashboard::renderLeftPanels(
     const std::string& modelName,
     bool visualDebugEnabled,
     bool collisionWireframeEnabled,
-    InputControllerGLFW* inputController
+    InputControllerGLFW* inputController,
+    const LoadedVehicleModel* activeModel,
+    float* exposure,
+    float* iblIntensity,
+    int* diagnosticMode
 ) {
     const float maxPanelHeight = std::max(320.0f, static_cast<float>(windowHeight) - 210.0f);
     ImGui::SetNextWindowPos(ImVec2(8.0f, 60.0f), ImGuiCond_FirstUseEver);
@@ -265,15 +304,39 @@ void ImGuiDashboard::renderLeftPanels(
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("LIVE VEHICLE TUNING & CONTROLS", nullptr, flags)) {
         if (ImGui::CollapsingHeader("VEHICLE SELECTION & CONFIGURATION", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const bool isBmw = (vehicle.config.id == "bmw_m4" || (useImportedModel && hasImportedModel));
-            if (ImGui::RadioButton("BMW M4 Coupe (Blender glTF 2.0)", isBmw)) {
-                if (!isBmw && m_callbacks.onSelectVehicle) {
-                    m_callbacks.onSelectVehicle("bmw_m4");
+            std::vector<VehicleOption> panelVehicleList = m_availableVehicles;
+            if (panelVehicleList.empty()) {
+                panelVehicleList = {
+                    {"bmw_m4", "BMW M4 Coupe"},
+                    {"dodge_challenger", "1970 Dodge Challenger R/T"},
+                    {"procedural_coupe", "Procedural Sports Coupe"}
+                };
+            }
+
+            int panelCarIdx = 0;
+            std::vector<const char*> fullCarNames;
+            fullCarNames.reserve(panelVehicleList.size());
+            for (size_t i = 0; i < panelVehicleList.size(); ++i) {
+                fullCarNames.push_back(panelVehicleList[i].name.c_str());
+                if (panelVehicleList[i].id == vehicle.config.id) {
+                    panelCarIdx = static_cast<int>(i);
                 }
             }
-            if (ImGui::RadioButton("Procedural Sports Coupe", !isBmw)) {
-                if (isBmw && m_callbacks.onSelectVehicle) {
-                    m_callbacks.onSelectVehicle("procedural_coupe");
+
+            ImGui::Text("Active Car:");
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::Combo("##PanelCarSelect", &panelCarIdx, fullCarNames.data(), static_cast<int>(fullCarNames.size()))) {
+                if (m_callbacks.onSelectVehicle && panelCarIdx >= 0 && panelCarIdx < static_cast<int>(panelVehicleList.size())) {
+                    m_callbacks.onSelectVehicle(panelVehicleList[static_cast<size_t>(panelCarIdx)].id);
+                }
+            }
+
+            ImGui::Spacing();
+            for (size_t i = 0; i < panelVehicleList.size(); ++i) {
+                if (ImGui::RadioButton(panelVehicleList[i].name.c_str(), panelCarIdx == static_cast<int>(i))) {
+                    if (panelCarIdx != static_cast<int>(i) && m_callbacks.onSelectVehicle) {
+                        m_callbacks.onSelectVehicle(panelVehicleList[i].id);
+                    }
                 }
             }
 
@@ -341,6 +404,73 @@ void ImGuiDashboard::renderLeftPanels(
             }
         }
 
+        if (ImGui::CollapsingHeader("PBR MATERIAL INSPECTOR & LIGHTING", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (diagnosticMode) {
+                const char* diagModes[] = {
+                    "0: Full PBR Lit (Final)",
+                    "1: Base Color / Albedo Map",
+                    "2: Metalness Channel",
+                    "3: Roughness Channel",
+                    "4: Tangent-Space Normals",
+                    "5: Ambient Occlusion Map",
+                    "6: Emissive Illumination",
+                    "7: Tangents (MikkTSpace)",
+                    "8: Environment Specular (IBL)"
+                };
+                ImGui::Text("Shading Inspection Mode:");
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::Combo("##DiagModeCombo", diagnosticMode, diagModes, 9);
+            }
+
+            if (exposure) {
+                ImGui::SliderFloat("Exposure", exposure, 0.2f, 3.0f, "%.2f");
+            }
+            if (iblIntensity) {
+                ImGui::SliderFloat("IBL Multiplier", iblIntensity, 0.0f, 3.0f, "%.2f");
+            }
+
+            if (activeModel && !activeModel->uniqueMaterials.empty()) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::TextColored(hexToImVec4(0x38bdf8), "Materials: %zu distinct", activeModel->uniqueMaterials.size());
+
+                if (ImGui::BeginChild("##MatListChild", ImVec2(0, 160.0f), true, ImGuiWindowFlags_HorizontalScrollbar)) {
+                    for (size_t mIdx = 0; mIdx < activeModel->uniqueMaterials.size(); ++mIdx) {
+                        const auto& mat = activeModel->uniqueMaterials[mIdx];
+                        ImGui::PushID(static_cast<int>(mIdx));
+
+                        const ImVec4 col4(mat.baseColor.r, mat.baseColor.g, mat.baseColor.b, mat.opacity);
+                        ImGui::ColorButton("##swatch", col4, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker, ImVec2(16, 16));
+                        ImGui::SameLine();
+
+                        ImGui::Text("%s", mat.name.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("R:%.2f M:%.2f", mat.roughness, mat.metalness);
+
+                        std::string badges;
+                        if (mat.textureId != 0) badges += "[Alb] ";
+                        if (mat.normalMapId != 0) badges += "[Nrm] ";
+                        if (mat.metallicRoughnessMapId != 0) badges += "[Met-Rough] ";
+                        if (mat.occlusionMapId != 0) badges += "[AO] ";
+                        if (mat.emissiveMapId != 0 || mat.emissiveIntensity > 0.0f) badges += "[Ems] ";
+                        if (mat.alphaMode == AlphaMode::Blend) badges += "[Blend] ";
+                        else if (mat.alphaMode == AlphaMode::Mask) badges += "[Mask] ";
+                        if (mat.doubleSided) badges += "[2-Sided] ";
+
+                        if (!badges.empty()) {
+                            ImGui::TextColored(hexToImVec4(0xa78bfa), "  %s", badges.c_str());
+                        }
+
+                        ImGui::PopID();
+                    }
+                }
+                ImGui::EndChild();
+            } else if (!useImportedModel) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("Active Model: Procedural Sports Coupe");
+            }
+        }
+
         if (ImGui::CollapsingHeader("DRIVING CONTROLS", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::TextDisabled("W/Up:");    ImGui::SameLine(90); ImGui::TextUnformatted("Throttle");
             ImGui::TextDisabled("S/Down:");  ImGui::SameLine(90); ImGui::TextUnformatted("Brake / Reverse");
@@ -361,6 +491,8 @@ void ImGuiDashboard::renderLeftPanels(
         if (ImGui::SmallButton("Defaults")) {
             if (vehicle.config.id == "bmw_m4") {
                 vehicle.config = createBmwM4Config();
+            } else if (vehicle.config.id == "dodge_challenger") {
+                vehicle.config = createDodgeChallengerConfig();
             } else {
                 vehicle.config = createProceduralCoupeConfig();
             }
@@ -744,10 +876,18 @@ void ImGuiDashboard::renderRightTelemetryPanel(
                 ImGui::TableNextRow();
 
                 ImGui::TableSetColumnIndex(0);
-                const ImVec4 statusCol = w.inContact
-                    ? (w.isSkidding ? hexToImVec4(0xef4444) : hexToImVec4(0x22c55e))
-                    : hexToImVec4(0x64748b);
-                ImGui::TextColored(statusCol, "%s", w.id.c_str());
+                const ImVec4 statusCol = w.hasObstacleContact
+                    ? hexToImVec4(0xf97316)
+                    : (w.inContact
+                        ? (w.isSkidding ? hexToImVec4(0xef4444) : hexToImVec4(0x22c55e))
+                        : hexToImVec4(0x64748b));
+                ImGui::TextColored(statusCol, "%s%s", w.id.c_str(), w.hasObstacleContact ? "*" : "");
+                if (w.hasObstacleContact && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Obstacle / Circumference Contact!\nHit Angle: %.1f deg\nF_obs: %.0f N\nF_climb: %.0f N",
+                                      radToDeg(w.circumferentialHitAngle),
+                                      vec3Length(w.obstacleResistanceForceWorld),
+                                      vec3Length(w.tractionClimbingForceWorld));
+                }
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.0f (%d%%)", w.compression * 1000.0, static_cast<int>(std::round(w.compressionRatio * 100.0)));

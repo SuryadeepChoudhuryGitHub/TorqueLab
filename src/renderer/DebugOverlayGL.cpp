@@ -96,6 +96,60 @@ void DebugOverlayGL::addCircleXZ(
     }
 }
 
+static btVector3 toBtVec3(const Vec3& v) {
+    return btVector3(static_cast<btScalar>(v.x), static_cast<btScalar>(v.y), static_cast<btScalar>(v.z));
+}
+
+static btQuaternion toBtQuat(const Quat& q) {
+    return btQuaternion(
+        static_cast<btScalar>(q.x),
+        static_cast<btScalar>(q.y),
+        static_cast<btScalar>(q.z),
+        static_cast<btScalar>(q.w)
+    );
+}
+
+void DebugOverlayGL::addCylinderXWireframe(
+    double halfWidth,
+    double radius,
+    const btTransform& worldTrans,
+    const Color3& color,
+    std::vector<LineVertex>& buffer,
+    int segments
+) {
+    auto toV = [](const btVector3& p) { return Vec3{p.x(), p.y(), p.z()}; };
+
+    for (int i = 0; i < segments; ++i) {
+        const double a0 = (static_cast<double>(i) / static_cast<double>(segments)) * 2.0 * PI_D;
+        const double a1 = (static_cast<double>(i + 1) / static_cast<double>(segments)) * 2.0 * PI_D;
+
+        const double y0 = std::cos(a0) * radius;
+        const double z0 = std::sin(a0) * radius;
+        const double y1 = std::cos(a1) * radius;
+        const double z1 = std::sin(a1) * radius;
+
+        // Left rim
+        const btVector3 l0(static_cast<btScalar>(-halfWidth), static_cast<btScalar>(y0), static_cast<btScalar>(z0));
+        const btVector3 l1(static_cast<btScalar>(-halfWidth), static_cast<btScalar>(y1), static_cast<btScalar>(z1));
+        addLine(toV(worldTrans(l0)), toV(worldTrans(l1)), color, buffer);
+
+        // Right rim
+        const btVector3 r0(static_cast<btScalar>(+halfWidth), static_cast<btScalar>(y0), static_cast<btScalar>(z0));
+        const btVector3 r1(static_cast<btScalar>(+halfWidth), static_cast<btScalar>(y1), static_cast<btScalar>(z1));
+        addLine(toV(worldTrans(r0)), toV(worldTrans(r1)), color, buffer);
+
+        // Longitudinal ribs connecting the rims (8 ribs total)
+        if (segments >= 8 && (i % (segments / 8) == 0)) {
+            addLine(toV(worldTrans(l0)), toV(worldTrans(r0)), color, buffer);
+        }
+    }
+
+    // Axle center pin
+    const btVector3 axleL(static_cast<btScalar>(-halfWidth * 1.15), 0.0f, 0.0f);
+    const btVector3 axleR(static_cast<btScalar>(+halfWidth * 1.15), 0.0f, 0.0f);
+    addLine(toV(worldTrans(axleL)), toV(worldTrans(axleR)), Color3::fromHex(0xffffff), buffer);
+}
+
 void DebugOverlayGL::addBoxWireframe(
     const btVector3& halfExtents,
     const btTransform& worldTrans,
@@ -224,9 +278,27 @@ void DebugOverlayGL::render(
     lines.reserve(1024);
 
     // 1. Physical Collision Shape Wireframe (exact Bullet physical boundaries)
-    if (showCollisionWireframe && vehicle.body.getRigidBody() && vehicle.body.getCompoundShape()) {
-        const Color3 cageColor = Color3::fromHex(0x22c55e); // Emerald Green
-        addCompoundWireframe(vehicle.body.getRigidBody(), vehicle.body.getCompoundShape(), cageColor, lines);
+    if (showCollisionWireframe) {
+        if (vehicle.body.getRigidBody() && vehicle.body.getCompoundShape()) {
+            const Color3 cageColor = Color3::fromHex(0x22c55e); // Emerald Green for chassis body
+            addCompoundWireframe(vehicle.body.getRigidBody(), vehicle.body.getCompoundShape(), cageColor, lines);
+        }
+
+        // Dedicated physical wheel collision cylinders (Cyan for Front, Amber for Rear)
+        for (int i = 0; i < 4; ++i) {
+            const WheelState& w = snap.wheels[static_cast<size_t>(i)];
+            const btCollisionObject* wheelObj = vehicle.getWheelCollisionObject(i);
+            btTransform wt;
+            if (wheelObj) {
+                wt = wheelObj->getWorldTransform();
+            } else {
+                wt.setIdentity();
+                wt.setOrigin(toBtVec3(w.wheelCenterWorld));
+                wt.setRotation(toBtQuat(w.worldOrientation));
+            }
+            const Color3 wheelColor = (i < 2) ? Color3::fromHex(0x06b6d4) : Color3::fromHex(0xf59e0b); // Cyan / Amber
+            addCylinderXWireframe(w.wheelWidth * 0.5, w.wheelRadius, wt, wheelColor, lines);
+        }
     }
 
     // 1. Chassis Basis, Velocity, and Acceleration Arrows
@@ -281,6 +353,30 @@ void DebugOverlayGL::render(
                     lines
                 );
             }
+
+            // Obstacle contact horizontal resistance and climbing traction forces
+            if (w.hasObstacleContact) {
+                const double obsResMag = vec3Length(w.obstacleResistanceForceWorld);
+                if (obsResMag > 20.0) {
+                    addArrow(
+                        w.contactPointWorld,
+                        w.obstacleResistanceForceWorld,
+                        std::max(0.15, obsResMag * m_forceScale),
+                        Color3::fromHex(0xf97316), // Orange
+                        lines
+                    );
+                }
+                const double climbMag = vec3Length(w.tractionClimbingForceWorld);
+                if (climbMag > 20.0) {
+                    addArrow(
+                        w.contactPointWorld,
+                        w.tractionClimbingForceWorld,
+                        std::max(0.15, climbMag * m_forceScale),
+                        Color3::fromHex(0x10b981), // Emerald
+                        lines
+                    );
+                }
+            }
         }
     }
 
@@ -311,14 +407,18 @@ void DebugOverlayGL::render(
     for (int i = 0; i < 4; ++i) {
         const WheelState& w = snap.wheels[static_cast<size_t>(i)];
         if (w.inContact && w.normalLoad > 10.0) {
-            markerMat.baseColor = Color3::fromHex(w.isSkidding ? 0xef4444 : 0x22c55e);
+            if (w.hasObstacleContact) {
+                markerMat.baseColor = Color3::fromHex(0xf97316); // Amber-Orange for obstacle/circumference contact
+            } else {
+                markerMat.baseColor = Color3::fromHex(w.isSkidding ? 0xef4444 : 0x22c55e);
+            }
             mainShader.applyMaterial(markerMat);
             mainShader.setMat4(
                 "uModel",
                 Mat4::fromTRS(
                     Vec3{w.contactPointWorld.x, w.contactPointWorld.y + 0.02, w.contactPointWorld.z},
                     quatIdentity(),
-                    Vec3{0.055, 0.055, 0.055}
+                    Vec3{0.065, 0.065, 0.065}
                 )
             );
             m_sphereMesh.draw();

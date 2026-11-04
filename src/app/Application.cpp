@@ -89,20 +89,28 @@ bool Application::init(int width, int height, bool visible) {
     }
 
     m_trackRenderer.init(m_physicsWorld->trackElements);
+    m_trackRenderer.setQuality(GraphicsQuality::Maximum, m_shadowFBO);
     m_vehicleRenderer.init(config);
     m_debugOverlay.init();
+    m_environmentMap.init(256);
+    m_skyRenderer.init();
 
     // 3b. Automatic Model-Derived Collision Generation from Imported 3D Geometry
     CollisionPipelineSettings colSettings{};
-    VehicleCollisionGenerator::generateFromModel(
-        m_vehicleRenderer.getImportedModel(),
-        colSettings,
-        m_bmwCollision
-    );
-    if (m_bmwCollision.geometryDerivedSuccessfully) {
-        VehicleCollisionGenerator::applyDerivedGeometryToConfig(m_bmwCollision, config);
+    for (const auto& [vehId, model] : m_vehicleRenderer.getAllImportedModels()) {
+        GeneratedVehicleCollision col{};
+        VehicleCollisionGenerator::generateFromModel(model, colSettings, col);
+        m_vehicleCollisions[vehId] = std::move(col);
     }
-    m_physicsWorld->switchVehicle(config, &m_bmwCollision);
+
+    const GeneratedVehicleCollision* initCol = nullptr;
+    auto initIt = m_vehicleCollisions.find(config.id);
+    if (initIt != m_vehicleCollisions.end() && initIt->second.geometryDerivedSuccessfully) {
+        VehicleCollisionGenerator::applyDerivedGeometryToConfig(initIt->second, config);
+        initCol = &initIt->second;
+    }
+
+    m_physicsWorld->switchVehicle(config, initCol);
     for (int i = 0; i < 45; ++i) {
         m_physicsWorld->stepFixed();
     }
@@ -158,15 +166,19 @@ bool Application::init(int width, int height, bool visible) {
         },
         [this]() {
             const auto& cfg = m_physicsWorld->vehicle->config;
-            const std::string path = (cfg.id == "bmw_m4") ? "model/bmw_m4_vehicle.json" : "model/procedural_coupe_vehicle.json";
+            const std::string path = "model/" + cfg.id + "_vehicle.json";
             saveVehicleConfigToJson(cfg, path);
             m_dashboard->showValidationReport("Saved vehicle configuration to " + path, true);
         },
         [this]() {
             auto& cfg = m_physicsWorld->vehicle->config;
-            const std::string path = (cfg.id == "bmw_m4") ? "model/bmw_m4_vehicle.json" : "model/procedural_coupe_vehicle.json";
+            const std::string path = "model/" + cfg.id + "_vehicle.json";
             if (loadVehicleConfigFromJson(cfg, path)) {
-                const auto* col = (cfg.id == "bmw_m4") ? &m_bmwCollision : nullptr;
+                const GeneratedVehicleCollision* col = nullptr;
+                auto colIt = m_vehicleCollisions.find(cfg.id);
+                if (colIt != m_vehicleCollisions.end() && colIt->second.geometryDerivedSuccessfully) {
+                    col = &colIt->second;
+                }
                 m_physicsWorld->switchVehicle(cfg, col);
                 for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
                 m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
@@ -174,9 +186,24 @@ bool Application::init(int width, int height, bool visible) {
             }
         },
         [this]() {
-            const bool isBmw = (m_physicsWorld->vehicle->config.id == "bmw_m4");
-            VehicleConfig cfg = isBmw ? createBmwM4Config() : createProceduralCoupeConfig();
-            const auto* col = isBmw ? &m_bmwCollision : nullptr;
+            const std::string& id = m_physicsWorld->vehicle->config.id;
+            VehicleConfig cfg{};
+            const GeneratedVehicleCollision* col = nullptr;
+            auto colIt = m_vehicleCollisions.find(id);
+            if (colIt != m_vehicleCollisions.end() && colIt->second.geometryDerivedSuccessfully) {
+                col = &colIt->second;
+            }
+            if (id == "bmw_m4") {
+                cfg = createBmwM4Config();
+            } else if (id == "dodge_challenger") {
+                cfg = createDodgeChallengerConfig();
+            } else if (id == "procedural_coupe") {
+                cfg = createProceduralCoupeConfig();
+                col = nullptr;
+            } else {
+                cfg = createDefaultVehicleConfig();
+                cfg.id = id;
+            }
             m_physicsWorld->switchVehicle(cfg, col);
             for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
             m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
@@ -189,21 +216,29 @@ bool Application::init(int width, int height, bool visible) {
             CollisionPipelineSettings colSettings{};
             colSettings.strategy = strategy;
             colSettings.enableCaching = false;
+            GeneratedVehicleCollision newCol{};
             VehicleCollisionGenerator::generateFromModel(
                 m_vehicleRenderer.getImportedModel(),
                 colSettings,
-                m_bmwCollision
+                newCol
             );
             auto cfg = m_physicsWorld->vehicle->config;
-            if (m_bmwCollision.geometryDerivedSuccessfully) {
-                VehicleCollisionGenerator::applyDerivedGeometryToConfig(m_bmwCollision, cfg);
+            if (newCol.geometryDerivedSuccessfully) {
+                VehicleCollisionGenerator::applyDerivedGeometryToConfig(newCol, cfg);
             }
-            m_physicsWorld->switchVehicle(cfg, &m_bmwCollision);
+            m_vehicleCollisions[cfg.id] = newCol;
+            m_physicsWorld->switchVehicle(cfg, &m_vehicleCollisions[cfg.id]);
             for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
             m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
             m_dashboard->showValidationReport("Regenerated collision: " + std::string(getStrategyName(strategy)), true);
         }
     });
+
+    std::vector<ImGuiDashboard::VehicleOption> dashOptions;
+    for (const auto& v : m_vehicleRenderer.getAvailableVehicles()) {
+        dashOptions.push_back({v.id, v.displayName});
+    }
+    m_dashboard->setAvailableVehicles(std::move(dashOptions));
     m_dashboard->applyTheme();
 
     m_inputController = std::make_unique<InputControllerGLFW>(InputCallbacks{
@@ -257,8 +292,17 @@ bool Application::init(int width, int height, bool visible) {
             m_cameraController->snapToVehicle(*m_physicsWorld->vehicle);
         },
         [this]() {
-            const bool isBmw = (m_physicsWorld->vehicle->config.id == "bmw_m4");
-            switchActiveVehicle(isBmw ? "procedural_coupe" : "bmw_m4");
+            const auto& avail = m_vehicleRenderer.getAvailableVehicles();
+            if (avail.empty()) return;
+            const std::string& curId = m_physicsWorld->vehicle->config.id;
+            size_t nextIdx = 0;
+            for (size_t i = 0; i < avail.size(); ++i) {
+                if (avail[i].id == curId) {
+                    nextIdx = (i + 1) % avail.size();
+                    break;
+                }
+            }
+            switchActiveVehicle(avail[nextIdx].id);
         },
         [this]() {
             m_vehicleRenderer.toggleVisualDebug();
@@ -277,22 +321,40 @@ bool Application::init(int width, int height, bool visible) {
 }
 
 void Application::switchActiveVehicle(const std::string& vehicleId) {
-    if (vehicleId == "bmw_m4") {
-        VehicleConfig bmw = createBmwM4Config();
-        loadVehicleConfigFromJson(bmw, "model/bmw_m4_vehicle.json");
-        const GeneratedVehicleCollision* colPtr = nullptr;
-        if (m_bmwCollision.geometryDerivedSuccessfully && !m_bmwCollision.pieces.empty()) {
-            VehicleCollisionGenerator::applyDerivedGeometryToConfig(m_bmwCollision, bmw);
-            colPtr = &m_bmwCollision;
-        }
-        m_physicsWorld->switchVehicle(bmw, colPtr);
-        m_vehicleRenderer.setUseImportedModel(true);
-    } else {
-        VehicleConfig proc = createProceduralCoupeConfig();
-        loadVehicleConfigFromJson(proc, "model/procedural_coupe_vehicle.json");
-        m_physicsWorld->switchVehicle(proc, nullptr);
-        m_vehicleRenderer.setUseImportedModel(false);
+    VehicleConfig cfg = createDefaultVehicleConfig();
+    const GeneratedVehicleCollision* colPtr = nullptr;
+
+    auto colIt = m_vehicleCollisions.find(vehicleId);
+    if (colIt != m_vehicleCollisions.end() && colIt->second.geometryDerivedSuccessfully && !colIt->second.pieces.empty()) {
+        colPtr = &colIt->second;
     }
+
+    if (vehicleId == "bmw_m4") {
+        cfg = createBmwM4Config();
+    } else if (vehicleId == "dodge_challenger") {
+        cfg = createDodgeChallengerConfig();
+    } else if (vehicleId == "procedural_coupe") {
+        cfg = createProceduralCoupeConfig();
+        colPtr = nullptr;
+    } else {
+        // Generic newly added vehicle from model/
+        if (colPtr) {
+            VehicleCollisionGenerator::applyDerivedGeometryToConfig(*colPtr, cfg);
+        }
+        cfg.id = vehicleId;
+    }
+
+    // Load custom vehicle tuning JSON if it exists (e.g. model/<id>_vehicle.json)
+    const std::string jsonPath = "model/" + vehicleId + "_vehicle.json";
+    loadVehicleConfigFromJson(cfg, jsonPath);
+
+    if (colPtr && vehicleId != "procedural_coupe") {
+        VehicleCollisionGenerator::applyDerivedGeometryToConfig(*colPtr, cfg);
+    }
+
+    m_physicsWorld->switchVehicle(cfg, colPtr);
+    m_vehicleRenderer.setActiveVehicleModel(vehicleId);
+
     for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
     m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
     m_cameraController->snapToVehicle(*m_physicsWorld->vehicle);
@@ -457,7 +519,11 @@ int Application::run(int maxFrames) {
             m_vehicleRenderer.getActiveModelName(),
             m_vehicleRenderer.isVisualDebugEnabled(),
             m_debugOverlay.showCollisionWireframe,
-            m_inputController.get()
+            m_inputController.get(),
+            m_vehicleRenderer.isUsingImportedModel() ? &m_vehicleRenderer.getImportedModel() : nullptr,
+            &m_exposure,
+            &m_iblIntensity,
+            &m_diagnosticMode
         );
 
         ImGui::Render();
@@ -518,9 +584,18 @@ void Application::renderFrame(double /*alpha*/) {
 
     // Pass 2: Main Lit & Shadowed Scene Pass
     glViewport(0, 0, m_fbWidth, m_fbHeight);
-    const Color3 skyBg = Color3::fromHex(0x0f172a);
-    glClearColor(skyBg.r, skyBg.g, skyBg.b, 1.0f);
+    const Color3 horizonColor = m_skyRenderer.getHorizonColor();
+    glClearColor(horizonColor.r, horizonColor.g, horizonColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Pass 2a: Atmospheric Sky Dome Pass (renders at far clip plane with depth write disabled)
+    m_skyRenderer.render(
+        m_cameraController->getViewMatrix(),
+        m_cameraController->getProjectionMatrix(),
+        m_trackRenderer.getSunDirection(),
+        m_exposure,
+        static_cast<int>(m_trackRenderer.getQuality())
+    );
 
     const Mat4 viewProj = m_cameraController->getViewProjectionMatrix();
 
@@ -530,21 +605,30 @@ void Application::renderFrame(double /*alpha*/) {
     m_mainShader.setVec3("uCameraPos", m_cameraController->getPosition());
     m_mainShader.setVec3("uSunDir", m_trackRenderer.getSunDirection());
     m_mainShader.setVec3("uSunColor", 1.9f, 1.86f, 1.75f);
-    m_mainShader.setColor3("uSkyColor", Color3::fromHex(0xdbeafe));
-    m_mainShader.setColor3("uGroundColor", Color3::fromHex(0x1e293b));
-    m_mainShader.setColor3("uFogColor", skyBg);
-    m_mainShader.setFloat("uFogDensity", 0.0022f);
+    m_mainShader.setColor3("uSkyColor", Color3::fromHex(0x93c5fd));
+    m_mainShader.setColor3("uGroundColor", Color3::fromHex(0x273628));
+    m_mainShader.setColor3("uFogColor", horizonColor);
+    m_mainShader.setFloat("uFogDensity", 0.0015f);
     m_mainShader.setInt("uShadowsEnabled", m_trackRenderer.areShadowsEnabled() ? 1 : 0);
+    m_mainShader.setInt("uQualityPreset", static_cast<int>(m_trackRenderer.getQuality()));
+    m_mainShader.setFloat("uShadowTexelSize", m_trackRenderer.getShadowTexelSize());
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_shadowFBO.getDepthTexture());
     m_mainShader.setInt("uShadowMap", 1);
+
+    m_environmentMap.bind(2);
+    m_mainShader.setInt("uEnvironmentMap", 2);
+    m_mainShader.setFloat("uExposure", m_exposure);
+    m_mainShader.setFloat("uIblIntensity", m_iblIntensity);
+    m_mainShader.setInt("uDiagnosticMode", m_diagnosticMode);
 
     m_trackRenderer.renderMainPass(m_mainShader);
     m_vehicleRenderer.renderMainPass(m_mainShader);
     m_debugOverlay.render(*m_physicsWorld->vehicle, m_lineShader, m_mainShader, viewProj);
     m_vehicleRenderer.renderVisualDebug(m_lineShader, m_mainShader, viewProj);
 
+    m_environmentMap.unbind(2);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);

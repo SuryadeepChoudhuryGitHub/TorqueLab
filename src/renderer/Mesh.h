@@ -9,11 +9,14 @@
 
 namespace torquelab {
 
-struct VertexPNU {
-    float px, py, pz;
-    float nx, ny, nz;
-    float u, v;
+struct VertexPNTU {
+    float px{0.0f}, py{0.0f}, pz{0.0f};
+    float nx{0.0f}, ny{1.0f}, nz{0.0f};
+    float tx{1.0f}, ty{0.0f}, tz{0.0f}, tw{1.0f}; // Tangent XYZ + handedness W (+1.0 or -1.0)
+    float u{0.0f}, v{0.0f};
 };
+
+using VertexPNU = VertexPNTU;
 
 class Mesh {
 public:
@@ -26,8 +29,10 @@ public:
     Mesh(Mesh&& other) noexcept;
     Mesh& operator=(Mesh&& other) noexcept;
 
-    void upload(const std::vector<VertexPNU>& vertices, const std::vector<unsigned int>& indices);
+    void upload(const std::vector<VertexPNTU>& vertices, const std::vector<unsigned int>& indices);
     void draw() const;
+
+    static void computeTangents(std::vector<VertexPNTU>& vertices, const std::vector<unsigned int>& indices);
 
     static Mesh createBox(float width, float height, float depth);
     static Mesh createCylinderY(float radiusTop, float radiusBottom, float height, int radialSegments = 24);

@@ -5,6 +5,8 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <vector>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "input/InputControllerGLFW.h"
@@ -12,8 +14,10 @@
 #include "physics/PhysicsWorld.h"
 #include "renderer/CameraControllerGL.h"
 #include "renderer/DebugOverlayGL.h"
+#include "renderer/EnvironmentMapGL.h"
 #include "renderer/Shader.h"
 #include "renderer/ShadowMapFBO.h"
+#include "renderer/SkyRendererGL.h"
 #include "renderer/TrackRendererGL.h"
 #include "renderer/VehicleRendererGL.h"
 #include "ui/ImGuiDashboard.h"
@@ -59,13 +63,19 @@ private:
     Shader m_depthShader;
     Shader m_lineShader;
     ShadowMapFBO m_shadowFBO;
+    SkyRendererGL m_skyRenderer;
     TrackRendererGL m_trackRenderer;
     VehicleRendererGL m_vehicleRenderer;
     DebugOverlayGL m_debugOverlay;
     std::unique_ptr<CameraControllerGL> m_cameraController;
     std::unique_ptr<InputControllerGLFW> m_inputController;
     std::unique_ptr<ImGuiDashboard> m_dashboard;
-    GeneratedVehicleCollision m_bmwCollision;
+    std::unordered_map<std::string, GeneratedVehicleCollision> m_vehicleCollisions;
+
+    EnvironmentMapGL m_environmentMap;
+    float m_exposure{1.0f};
+    float m_iblIntensity{1.0f};
+    int m_diagnosticMode{0};
 };
 
 } // namespace torquelab

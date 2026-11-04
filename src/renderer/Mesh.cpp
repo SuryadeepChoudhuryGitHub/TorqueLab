@@ -42,7 +42,7 @@ void Mesh::release() {
     m_indexCount = 0;
 }
 
-void Mesh::upload(const std::vector<VertexPNU>& vertices, const std::vector<unsigned int>& indices) {
+void Mesh::upload(const std::vector<VertexPNTU>& vertices, const std::vector<unsigned int>& indices) {
     release();
 
     glGenVertexArrays(1, &m_vao);
@@ -54,7 +54,7 @@ void Mesh::upload(const std::vector<VertexPNU>& vertices, const std::vector<unsi
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(vertices.size() * sizeof(VertexPNU)),
+        static_cast<GLsizeiptr>(vertices.size() * sizeof(VertexPNTU)),
         vertices.data(),
         GL_STATIC_DRAW
     );
@@ -69,18 +69,101 @@ void Mesh::upload(const std::vector<VertexPNU>& vertices, const std::vector<unsi
 
     // aPos (location = 0)
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPNU), reinterpret_cast<void*>(0));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPNTU), reinterpret_cast<void*>(0));
 
     // aNormal (location = 1)
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPNU), reinterpret_cast<void*>(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPNTU), reinterpret_cast<void*>(3 * sizeof(float)));
+
+    // aTangent (location = 3)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(VertexPNTU), reinterpret_cast<void*>(6 * sizeof(float)));
 
     // aTexCoord (location = 2)
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(VertexPNU), reinterpret_cast<void*>(6 * sizeof(float)));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(VertexPNTU), reinterpret_cast<void*>(10 * sizeof(float)));
 
     glBindVertexArray(0);
     m_indexCount = static_cast<GLsizei>(indices.size());
+}
+
+void Mesh::computeTangents(std::vector<VertexPNTU>& vertices, const std::vector<unsigned int>& indices) {
+    if (vertices.empty() || indices.empty()) return;
+
+    std::vector<Vec3> tan1(vertices.size(), Vec3{0, 0, 0});
+    std::vector<Vec3> tan2(vertices.size(), Vec3{0, 0, 0});
+
+    const size_t numTris = indices.size() / 3;
+    for (size_t i = 0; i < numTris; ++i) {
+        const unsigned int i1 = indices[i * 3 + 0];
+        const unsigned int i2 = indices[i * 3 + 1];
+        const unsigned int i3 = indices[i * 3 + 2];
+
+        if (i1 >= vertices.size() || i2 >= vertices.size() || i3 >= vertices.size()) continue;
+
+        const auto& v1 = vertices[i1];
+        const auto& v2 = vertices[i2];
+        const auto& v3 = vertices[i3];
+
+        const float x1 = v2.px - v1.px;
+        const float x2 = v3.px - v1.px;
+        const float y1 = v2.py - v1.py;
+        const float y2 = v3.py - v1.py;
+        const float z1 = v2.pz - v1.pz;
+        const float z2 = v3.pz - v1.pz;
+
+        const float s1 = v2.u - v1.u;
+        const float s2 = v3.u - v1.u;
+        const float t1 = v2.v - v1.v;
+        const float t2 = v3.v - v1.v;
+
+        const float r = (s1 * t2 - s2 * t1);
+        const float invR = (std::abs(r) > 1e-6f) ? (1.0f / r) : 0.0f;
+
+        const Vec3 sdir{
+            (t2 * x1 - t1 * x2) * invR,
+            (t2 * y1 - t1 * y2) * invR,
+            (t2 * z1 - t1 * z2) * invR
+        };
+        const Vec3 tdir{
+            (s1 * x2 - s2 * x1) * invR,
+            (s1 * y2 - s2 * y1) * invR,
+            (s1 * z2 - s2 * z1) * invR
+        };
+
+        tan1[i1] = vec3Add(tan1[i1], sdir);
+        tan1[i2] = vec3Add(tan1[i2], sdir);
+        tan1[i3] = vec3Add(tan1[i3], sdir);
+
+        tan2[i1] = vec3Add(tan2[i1], tdir);
+        tan2[i2] = vec3Add(tan2[i2], tdir);
+        tan2[i3] = vec3Add(tan2[i3], tdir);
+    }
+
+    for (size_t a = 0; a < vertices.size(); ++a) {
+        auto& v = vertices[a];
+        const Vec3 n{v.nx, v.ny, v.nz};
+        const Vec3 t = tan1[a];
+
+        if (vec3LengthSq(t) > 1e-6) {
+            // Gram-Schmidt orthogonalize
+            Vec3 tangent = vec3Normalize(vec3Sub(t, vec3Scale(n, vec3Dot(n, t))));
+            const double handedness = (vec3Dot(vec3Cross(n, t), tan2[a]) < 0.0) ? -1.0 : 1.0;
+
+            v.tx = static_cast<float>(tangent.x);
+            v.ty = static_cast<float>(tangent.y);
+            v.tz = static_cast<float>(tangent.z);
+            v.tw = static_cast<float>(handedness);
+        } else {
+            Vec3 c1 = vec3Cross(n, Vec3{0, 0, 1});
+            Vec3 c2 = vec3Cross(n, Vec3{0, 1, 0});
+            Vec3 tangent = (vec3LengthSq(c1) > vec3LengthSq(c2)) ? vec3Normalize(c1) : vec3Normalize(c2);
+            v.tx = static_cast<float>(tangent.x);
+            v.ty = static_cast<float>(tangent.y);
+            v.tz = static_cast<float>(tangent.z);
+            v.tw = 1.0f;
+        }
+    }
 }
 
 void Mesh::draw() const {
@@ -97,37 +180,37 @@ Mesh Mesh::createBox(float width, float height, float depth) {
     const float hy = height * 0.5f;
     const float hz = depth * 0.5f;
 
-    const std::vector<VertexPNU> verts{
+    std::vector<VertexPNTU> verts{
         // +Z Front face
-        {-hx, -hy,  hz,  0,  0,  1,  0, 0},
-        { hx, -hy,  hz,  0,  0,  1,  1, 0},
-        { hx,  hy,  hz,  0,  0,  1,  1, 1},
-        {-hx,  hy,  hz,  0,  0,  1,  0, 1},
+        {-hx, -hy,  hz,  0,  0,  1,  1, 0, 0, 1,  0, 0},
+        { hx, -hy,  hz,  0,  0,  1,  1, 0, 0, 1,  1, 0},
+        { hx,  hy,  hz,  0,  0,  1,  1, 0, 0, 1,  1, 1},
+        {-hx,  hy,  hz,  0,  0,  1,  1, 0, 0, 1,  0, 1},
         // -Z Back face
-        { hx, -hy, -hz,  0,  0, -1,  0, 0},
-        {-hx, -hy, -hz,  0,  0, -1,  1, 0},
-        {-hx,  hy, -hz,  0,  0, -1,  1, 1},
-        { hx,  hy, -hz,  0,  0, -1,  0, 1},
+        { hx, -hy, -hz,  0,  0, -1, -1, 0, 0, 1,  0, 0},
+        {-hx, -hy, -hz,  0,  0, -1, -1, 0, 0, 1,  1, 0},
+        {-hx,  hy, -hz,  0,  0, -1, -1, 0, 0, 1,  1, 1},
+        { hx,  hy, -hz,  0,  0, -1, -1, 0, 0, 1,  0, 1},
         // +Y Top face
-        {-hx,  hy,  hz,  0,  1,  0,  0, 0},
-        { hx,  hy,  hz,  0,  1,  0,  1, 0},
-        { hx,  hy, -hz,  0,  1,  0,  1, 1},
-        {-hx,  hy, -hz,  0,  1,  0,  0, 1},
+        {-hx,  hy,  hz,  0,  1,  0,  1, 0, 0, 1,  0, 0},
+        { hx,  hy,  hz,  0,  1,  0,  1, 0, 0, 1,  1, 0},
+        { hx,  hy, -hz,  0,  1,  0,  1, 0, 0, 1,  1, 1},
+        {-hx,  hy, -hz,  0,  1,  0,  1, 0, 0, 1,  0, 1},
         // -Y Bottom face
-        {-hx, -hy, -hz,  0, -1,  0,  0, 0},
-        { hx, -hy, -hz,  0, -1,  0,  1, 0},
-        { hx, -hy,  hz,  0, -1,  0,  1, 1},
-        {-hx, -hy,  hz,  0, -1,  0,  0, 1},
+        {-hx, -hy, -hz,  0, -1,  0,  1, 0, 0, 1,  0, 0},
+        { hx, -hy, -hz,  0, -1,  0,  1, 0, 0, 1,  1, 0},
+        { hx, -hy,  hz,  0, -1,  0,  1, 0, 0, 1,  1, 1},
+        {-hx, -hy,  hz,  0, -1,  0,  1, 0, 0, 1,  0, 1},
         // +X Left face
-        { hx, -hy,  hz,  1,  0,  0,  0, 0},
-        { hx, -hy, -hz,  1,  0,  0,  1, 0},
-        { hx,  hy, -hz,  1,  0,  0,  1, 1},
-        { hx,  hy,  hz,  1,  0,  0,  0, 1},
+        { hx, -hy,  hz,  1,  0,  0,  0, 0, -1, 1,  0, 0},
+        { hx, -hy, -hz,  1,  0,  0,  0, 0, -1, 1,  1, 0},
+        { hx,  hy, -hz,  1,  0,  0,  0, 0, -1, 1,  1, 1},
+        { hx,  hy,  hz,  1,  0,  0,  0, 0, -1, 1,  0, 1},
         // -X Right face
-        {-hx, -hy, -hz, -1,  0,  0,  0, 0},
-        {-hx, -hy,  hz, -1,  0,  0,  1, 0},
-        {-hx,  hy,  hz, -1,  0,  0,  1, 1},
-        {-hx,  hy, -hz, -1,  0,  0,  0, 1}
+        {-hx, -hy, -hz, -1,  0,  0,  0, 0,  1, 1,  0, 0},
+        {-hx, -hy,  hz, -1,  0,  0,  0, 0,  1, 1,  1, 0},
+        {-hx,  hy,  hz, -1,  0,  0,  0, 0,  1, 1,  1, 1},
+        {-hx,  hy, -hz, -1,  0,  0,  0, 0,  1, 1,  0, 1}
     };
 
     std::vector<unsigned int> indices;
@@ -142,6 +225,7 @@ Mesh Mesh::createBox(float width, float height, float depth) {
         indices.push_back(base + 3);
     }
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;
@@ -205,6 +289,7 @@ Mesh Mesh::createCylinderY(float radiusTop, float radiusBottom, float height, in
         indices.push_back(botCenterIdx + 1 + static_cast<unsigned int>(i + 1));
     }
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;
@@ -269,6 +354,7 @@ Mesh Mesh::createCylinderX(float radiusTop, float radiusBottom, float width, int
         indices.push_back(negCenterIdx + 1 + static_cast<unsigned int>(i));
     }
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;
@@ -321,6 +407,7 @@ Mesh Mesh::createTorusZ(float radius, float tubeRadius, int radialSegments, int 
         }
     }
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;
@@ -366,6 +453,7 @@ Mesh Mesh::createSphere(float radius, int rings, int sectors) {
         }
     }
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;
@@ -375,14 +463,15 @@ Mesh Mesh::createPlaneXZ(float width, float depth) {
     const float hx = width * 0.5f;
     const float hz = depth * 0.5f;
 
-    const std::vector<VertexPNU> verts{
-        {-hx, 0.0f,  hz, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
-        { hx, 0.0f,  hz, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f},
-        { hx, 0.0f, -hz, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f},
-        {-hx, 0.0f, -hz, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f}
+    std::vector<VertexPNTU> verts{
+        {-hx, 0.0f,  hz, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f},
+        { hx, 0.0f,  hz, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f},
+        { hx, 0.0f, -hz, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f},
+        {-hx, 0.0f, -hz, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f}
     };
     const std::vector<unsigned int> indices{0, 1, 2, 0, 2, 3};
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;
@@ -398,8 +487,8 @@ Mesh Mesh::createRingXZ(float innerRadius, float outerRadius, int segments) {
         const float ct = std::cos(theta);
         const float st = std::sin(theta);
 
-        verts.push_back(VertexPNU{innerRadius * ct, 0.0f, innerRadius * st, 0.0f, 1.0f, 0.0f, u, 0.0f});
-        verts.push_back(VertexPNU{outerRadius * ct, 0.0f, outerRadius * st, 0.0f, 1.0f, 0.0f, u, 1.0f});
+        verts.push_back(VertexPNU{innerRadius * ct, 0.0f, innerRadius * st, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, u, 0.0f});
+        verts.push_back(VertexPNU{outerRadius * ct, 0.0f, outerRadius * st, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, u, 1.0f});
     }
 
     for (int i = 0; i < segments; ++i) {
@@ -412,6 +501,7 @@ Mesh Mesh::createRingXZ(float innerRadius, float outerRadius, int segments) {
         indices.push_back(b + 2);
     }
 
+    computeTangents(verts, indices);
     Mesh mesh;
     mesh.upload(verts, indices);
     return mesh;

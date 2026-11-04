@@ -70,6 +70,19 @@ public:
     static bool saveToCache(const GeneratedVehicleCollision& col, const std::string& cachePath);
     static bool loadFromCache(GeneratedVehicleCollision& col, const std::string& cachePath);
     static std::string getCacheFilePath(const std::string& cacheDir, const std::string& vehicleId);
+    static bool isCacheStale(const std::string& cachePath, const std::string& modelPath, const std::string& manifestPath = "");
+
+    /**
+     * Scans the model directory for .glb files, checks timestamps against collision caches,
+     * and bakes watertight Bullet collision geometry and derived vehicle geometry for any
+     * missing or updated models.
+     *
+     * Pure CPU / headless-safe (no OpenGL or window required).
+     */
+    static int bakeAllModelCollisions(
+        const std::string& modelDir = "model",
+        bool forceRebake = false
+    );
 
 private:
     /** Subsamples / decimates large vertex arrays into uniform spatial points. */

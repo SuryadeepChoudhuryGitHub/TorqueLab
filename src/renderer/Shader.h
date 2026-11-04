@@ -24,19 +24,41 @@ struct Color3 {
     }
 };
 
+enum class AlphaMode {
+    Opaque,
+    Mask,
+    Blend
+};
+
 struct MaterialProps {
     Color3 baseColor{1.0f, 1.0f, 1.0f};
+    float roughness{0.5f};
+    float metalness{0.0f};
+    float opacity{1.0f};
+
     Color3 emissiveColor{0.0f, 0.0f, 0.0f};
     float emissiveIntensity{0.0f};
-    float roughness{0.5f};
-    float metalness{0.1f};
-    float opacity{1.0f};
-    GLuint textureId{0};
+
+    // glTF 2.0 PBR Texture Maps (0 = none)
+    GLuint textureId{0};               // Albedo / Base Color map (sRGB)
+    GLuint metallicRoughnessMapId{0};  // Metallic (Blue) + Roughness (Green) map (Linear)
+    GLuint normalMapId{0};             // Tangent-space normal map (Linear)
+    float normalScale{1.0f};           // Normal map bump intensity
+    GLuint occlusionMapId{0};          // Ambient occlusion map (Red channel) (Linear)
+    float occlusionStrength{1.0f};     // Ambient occlusion strength
+    GLuint emissiveMapId{0};           // Emissive color map (sRGB)
+
     float uvScaleX{1.0f};
     float uvScaleY{1.0f};
+
+    AlphaMode alphaMode{AlphaMode::Opaque};
+    float alphaCutoff{0.5f};
+    bool doubleSided{false};
     bool receiveShadows{true};
     bool castShadows{true};
     bool unlit{false};
+
+    std::string name{"DefaultMaterial"};
 };
 
 class Shader {

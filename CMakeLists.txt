@@ -123,6 +123,9 @@ add_library(TorqueLabPhysics STATIC
     src/physics/SurfaceSystem.cpp
     src/physics/PhysicsWorld.cpp
     src/physics/VehicleCollisionGenerator.cpp
+    src/renderer/Mesh.cpp
+    src/renderer/Texture2D.cpp
+    src/renderer/ModelLoaderGLB.cpp
     src/vehicle/VehicleConfig.cpp
     src/vehicle/SuspensionSystem.cpp
     src/vehicle/TireModel.cpp
@@ -136,6 +139,7 @@ add_library(TorqueLabPhysics STATIC
 
 target_include_directories(TorqueLabPhysics PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glad/include
     ${bullet3_SOURCE_DIR}/src
     ${bullet3_SOURCE_DIR}/Extras/VHACD/public
@@ -146,6 +150,8 @@ target_link_libraries(TorqueLabPhysics PUBLIC
     BulletCollision
     LinearMath
     vhacd_lib
+    glad
+    OpenGL::GL
 )
 
 # -----------------------------------------------------------------------------
@@ -155,10 +161,9 @@ add_executable(TorqueLabNative
     src/app/main.cpp
     src/app/Application.cpp
     src/renderer/Shader.cpp
-    src/renderer/Mesh.cpp
-    src/renderer/Texture2D.cpp
+    src/renderer/EnvironmentMapGL.cpp
+    src/renderer/SkyRendererGL.cpp
     src/renderer/ShadowMapFBO.cpp
-    src/renderer/ModelLoaderGLB.cpp
     src/renderer/VehicleRendererGL.cpp
     src/renderer/TrackRendererGL.cpp
     src/renderer/DebugOverlayGL.cpp
@@ -195,6 +200,20 @@ add_custom_command(TARGET TorqueLabNative POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/model"
         "$<TARGET_FILE_DIR:TorqueLabNative>/model"
     COMMENT "Copying vehicle 3D models to output directory"
+)
+
+# Auto-bake vehicle collision geometry for any new or modified 3D models at build time
+add_custom_command(TARGET TorqueLabNative POST_BUILD
+    COMMAND "$<TARGET_FILE:TorqueLabNative>" --bake-collisions
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Auto-baking vehicle collision hulls for new or modified 3D models"
+)
+
+add_custom_command(TARGET TorqueLabNative POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/model/cache"
+        "$<TARGET_FILE_DIR:TorqueLabNative>/model/cache"
+    COMMENT "Syncing baked collision cache to output directory"
 )
 
 # -----------------------------------------------------------------------------

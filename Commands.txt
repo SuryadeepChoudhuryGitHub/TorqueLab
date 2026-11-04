@@ -1,0 +1,5 @@
+cmake --build build --config Release --target TorqueLabNative TorqueLabNativeTests
+
+.\build\Release\TorqueLabNativeTests.exe
+
+.\build\Release\TorqueLabNative.exe --smoke-test

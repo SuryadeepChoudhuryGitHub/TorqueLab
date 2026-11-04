@@ -7,6 +7,7 @@ void TrackRendererGL::init(const std::vector<TrackBoxElement>& trackElements) {
     createProceduralSurfaceMaterials();
     buildTrackMeshes(trackElements);
     buildReferenceMarkers();
+    buildEnvironmentTerrain();
     updateSunTarget(Vec3{0.0, 0.0, 0.0});
 }
 
@@ -27,11 +28,12 @@ void TrackRendererGL::createProceduralSurfaceMaterials() {
         m_surfaceMaterials[idx] = mat;
     };
 
-    setupMat(SurfaceType::DryAsphalt,  0x262b36, 0x323947, 0.05f, 45.0f, 85.0f, 0.78f, 0.08f, false);
-    setupMat(SurfaceType::WetAsphalt,  0x18283e, 0x243b5a, 0.04f,  8.0f, 30.0f, 0.16f, 0.45f, false);
-    setupMat(SurfaceType::Gravel,      0x7c5836, 0x926841, 0.14f, 10.0f, 35.0f, 0.94f, 0.02f, false);
-    setupMat(SurfaceType::Ice,         0x7dd3fc, 0xbae6fd, 0.04f,  8.0f, 30.0f, 0.08f, 0.35f, false);
-    setupMat(SurfaceType::Grass,       0x1b3b22, 0x22492a, 0.08f, 90.0f, 90.0f, 0.92f, 0.02f, false);
+    // Daytime PBR Outdoor Road & Terrain Materials
+    setupMat(SurfaceType::DryAsphalt,  0x2e333d, 0x3d4452, 0.06f, 45.0f, 85.0f, 0.74f, 0.08f, false);
+    setupMat(SurfaceType::WetAsphalt,  0x1a2636, 0x25374d, 0.04f,  8.0f, 30.0f, 0.14f, 0.25f, false);
+    setupMat(SurfaceType::Gravel,      0x785a3e, 0x8c6b4a, 0.14f, 10.0f, 35.0f, 0.92f, 0.02f, false);
+    setupMat(SurfaceType::Ice,         0x86d9ff, 0xc7edff, 0.04f,  8.0f, 30.0f, 0.08f, 0.35f, false);
+    setupMat(SurfaceType::Grass,       0x22462b, 0x2b5735, 0.08f, 90.0f, 90.0f, 0.90f, 0.02f, false);
     setupMat(SurfaceType::RumbleStrip, 0xdc2626, 0xf8fafc, 0.02f,  1.0f, 25.0f, 0.65f, 0.05f, true);
 }
 
@@ -130,6 +132,28 @@ void TrackRendererGL::buildReferenceMarkers() {
     }
 }
 
+void TrackRendererGL::buildEnvironmentTerrain() {
+    // Expansive horizon landscape terrain skirt (3600m x 3600m plane)
+    // Ensures the landscape extends seamlessly to the horizon in all directions,
+    // where atmospheric perspective naturally dissolves the ground into the blue sky.
+    RenderableTrackItem terrainSkirt{};
+    terrainSkirt.mesh = Mesh::createPlaneXZ(3600.0f, 3600.0f);
+    terrainSkirt.modelMatrix = Mat4::fromTRS(Vec3{0.0, -0.02, 90.0}, quatIdentity());
+
+    MaterialProps terrainMat{};
+    terrainMat.baseColor = Color3::fromHex(0x22462b);
+    terrainMat.textureId = m_surfaceTextures[static_cast<size_t>(SurfaceType::Grass)].getId();
+    terrainMat.uvScaleX = 240.0f;
+    terrainMat.uvScaleY = 240.0f;
+    terrainMat.roughness = 0.92f;
+    terrainMat.metalness = 0.02f;
+    terrainMat.receiveShadows = false;
+    terrainMat.castShadows = false;
+    terrainSkirt.material = terrainMat;
+
+    m_items.push_back(std::move(terrainSkirt));
+}
+
 void TrackRendererGL::updateSunTarget(const Vec3& vehiclePos) {
     const Vec3 sunOffset{45.0, 75.0, 35.0};
     m_sunDirection = vec3Normalize(sunOffset);
@@ -140,9 +164,16 @@ void TrackRendererGL::updateSunTarget(const Vec3& vehiclePos) {
     m_lightSpaceMatrix = Mat4::multiply(lightProj, lightView);
 }
 
+float TrackRendererGL::getShadowTexelSize() const {
+    if (m_quality == GraphicsQuality::Medium) {
+        return 1.0f / 1024.0f;
+    }
+    return 1.0f / 2048.0f;
+}
+
 void TrackRendererGL::setQuality(GraphicsQuality quality, ShadowMapFBO& shadowFBO) {
     m_quality = quality;
-    if (quality == GraphicsQuality::High) {
+    if (quality == GraphicsQuality::Maximum || quality == GraphicsQuality::High) {
         shadowFBO.resize(2048);
     } else if (quality == GraphicsQuality::Medium) {
         shadowFBO.resize(1024);

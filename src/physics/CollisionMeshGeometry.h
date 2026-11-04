@@ -135,14 +135,26 @@ struct GeneratedVehicleCollision {
     bool geometryDerivedSuccessfully{false};
     double derivedWheelbase{0.0};
     double derivedTrackWidth{0.0};
+    double derivedFrontTrackWidth{0.0};
+    double derivedRearTrackWidth{0.0};
     double derivedWheelRadius{0.0};
+    double derivedFrontWheelRadius{0.0};
+    double derivedRearWheelRadius{0.0};
     double derivedWheelWidth{0.0};
+    double derivedFrontWheelWidth{0.0};
+    double derivedRearWheelWidth{0.0};
     double derivedGroundClearance{0.0};
     std::array<Vec3, 4> derivedWheelCenters{
         Vec3{ 0.79, 0.33,  1.38},
         Vec3{-0.79, 0.33,  1.38},
         Vec3{ 0.79, 0.33, -1.38},
         Vec3{-0.79, 0.33, -1.38}
+    };
+    std::array<Vec3, 4> derivedWheelMountsLocal{
+        Vec3{ 0.79, 0.10,  1.38},
+        Vec3{-0.79, 0.10,  1.38},
+        Vec3{ 0.79, 0.10, -1.38},
+        Vec3{-0.79, 0.10, -1.38}
     };
 
     // Diagnostic & Telemetry Metrics
