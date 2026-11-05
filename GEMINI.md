@@ -28,8 +28,8 @@ cmake --build build_gcc -j 4
 # 2. Run the interactive desktop application (1440x900 OpenGL 3.3 window)
 .\build\Release\TorqueLabNative.exe
 
-# 3. Run the 30-suite automated unit, validation & controlled physics test harness
-.\build\Release\TorqueLabNativeTests.exe
+# 3. Run the 41-suite automated unit, validation & controlled physics test harness
+.\build_gcc\TorqueLabNativeTests.exe
 
 # 4. Run full-pipeline acceleration telemetry table + 600-frame live OpenGL timing diagnostics
 .\build\Release\TorqueLabNative.exe --diag
@@ -67,10 +67,11 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 
 ### `src/vehicle/` — 6-DOF Vehicle Dynamics Subsystems
 - [`src/vehicle/VehicleConfig.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleConfig.h) & [`VehicleConfig.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleConfig.cpp): `VehicleConfig` presets:
-  - `createBmwM4Config()` (Factory M4 Coupe: S55/S58 3.0L twin-turbo I6, $550\text{ N}\cdot\text{m}$, 6-speed RWD, mass $1600\text{ kg}$, wheelbase $2.76\text{ m}$, track $1.58\text{ m}$).
-  - `createDodgeChallengerConfig()` (Authentic 1970 Dodge Challenger R/T: 426 cu in Street Hemi V8, $664\text{ N}\cdot\text{m}$ peak torque, 4-speed manual gearbox, Dana 60 Sure-Grip LSD 3.54:1, mass $1680\text{ kg}$, 54% front distribution, wheelbase $2.794\text{ m}$ [$110.0\text{ in}$], track $1.56\text{ m}$, vintage muscle bias-ply tires and softer rear ARB for authentic launch squat).
-  - `createProceduralCoupeConfig()` (`mass = 1500 kg`, `wheelbase = 2.70 m`, `trackWidth = 1.60 m`, `frontWeightDistribution = 0.52`).
-- [`src/vehicle/WheelState.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/WheelState.h): Per-wheel state (`WheelState`) storing raycast contact, suspension compression/velocity/forces, slip ratio $\kappa$, slip angle $\alpha$, longitudinal/lateral tire forces, angular velocity $\omega$, rotation angle, and drive/brake torques.
+  - `createBmwM4Config()` (Factory M4 Coupe: S55/S58 3.0L twin-turbo I6, $550\text{ N}\cdot\text{m}$, 6-speed RWD, mass $1600\text{ kg}$, wheelbase $2.76\text{ m}$, track $1.58\text{ m}$, 220 kPa front / 240 kPa rear pneumatic pressures, 0.24m rim radius).
+  - `createDodgeChallengerConfig()` (Authentic 1970 Dodge Challenger R/T: 426 cu in Street Hemi V8, $664\text{ N}\cdot\text{m}$ peak torque, 4-speed manual gearbox, Dana 60 Sure-Grip LSD 3.54:1, mass $1680\text{ kg}$, 54% front distribution, wheelbase $2.794\text{ m}$ [$110.0\text{ in}$], track $1.56\text{ m}$, vintage muscle bias-ply tires and softer rear ARB for authentic launch squat, 195 kPa / 210 kPa pressures, 0.19m rim radius).
+  - `createProceduralCoupeConfig()` (`mass = 1500 kg`, `wheelbase = 2.70 m`, `trackWidth = 1.60 m`, `frontWeightDistribution = 0.52`, 220 kPa / 230 kPa pressures, 0.23m rim radius).
+- [`src/vehicle/PneumaticTire.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/PneumaticTire.h) & [`PneumaticTire.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/PneumaticTire.cpp): Full structural pneumatic tyre simulation engine. Implements Kelvin-Voigt viscoelastic carcass compliance, pressure-dependent radial/lateral/longitudinal stiffness ($k_r(p) = k_{r,0} + C_p (p - p_0)$), multi-point contact patch discretization across circumferential and lateral grids with Hertzian-like parabolic weighting, series suspension/tyre compliance integration, lateral carcass cornering shear $\delta_y$, longitudinal shear $\delta_x$, Poisson sidewall bulge ($\Delta w = \nu \cdot \delta_r$), pneumatic trail self-aligning torque ($M_z = t_p \cdot F_y$), thermal energy balance (frictional dissipation + hysteresis heating vs convective/conductive cooling), tread wear accumulation, and puncture air leakage dynamics.
+- [`src/vehicle/WheelState.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/WheelState.h): Per-wheel state (`WheelState`) storing raycast contact, suspension compression/velocity/forces, slip ratio $\kappa$, slip angle $\alpha$, longitudinal/lateral tire forces, angular velocity $\omega$, rotation angle, drive/brake torques, and the physical `PneumaticTireModel` instance.
 - [`src/vehicle/VehicleBody.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleBody.h) & [`VehicleBody.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/VehicleBody.cpp): Wraps the chassis `btRigidBody` + `btCompoundShape` (lower body box + upper greenhouse box offset relative to the configurable Center of Mass). Supports live CoM and mass updates (`syncMassProperties`), world-point force application (`applyForceAtWorldPoint`), and exact analytical + Bullet raycasting (`castRayExactWorld`).
 - [`src/vehicle/SuspensionSystem.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/SuspensionSystem.h) & [`SuspensionSystem.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/SuspensionSystem.cpp): Hooke spring ($F_s = -k \Delta x$), asymmetric bound/rebound damper ($c_{\text{bound}} \neq c_{\text{rebound}}$), progressive quadratic bump stop, and front/rear axle anti-roll bars (`computeAxleAntiRollForce`).
 - [`src/vehicle/TireModel.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/TireModel.h) & [`TireModel.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/vehicle/TireModel.cpp): Longitudinal slip ratio $\kappa$, lateral slip angle $\alpha$, load-sensitive friction coefficient $\mu(F_z)$, Pacejka Magic Formula $y(x) = D \sin(C \arctan(Bx - E(Bx - \arctan(Bx))))$, and combined-slip friction-circle saturation ($\sqrt{F_x^2 + F_y^2} \le \mu F_z$).
@@ -94,7 +95,7 @@ All physics and rendering code operates strictly in **SI metric units (`m`, `kg`
 - [`src/input/VibrationManager.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/VibrationManager.h) & [`VibrationManager.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/VibrationManager.cpp): Dynamic Windows XInput force-feedback rumble pipeline. Purely event-driven haptics inspired by Forza Horizon: collision impacts with non-linear impulse scaling & lateral directionality, suspension events (jump landings, bump-stop bottom-out, sharp curb strikes), underside chassis scrape buzzing, smooth cosine envelope decay, and collision deduplication. Zero vibration from engine RPM, throttle, or smooth cruising.
 - [`src/input/InputControllerGLFW.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.h) & [`InputControllerGLFW.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/input/InputControllerGLFW.cpp): Progressive keyboard + baseline-calibrated multi-gamepad input handler with continuous analog steering, trigger normalization, right-stick look-around, interactive rebinding, hotplugging, and car cycling (`RB` / `B`).
 - [`src/app/Application.h`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/Application.h), [`Application.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/Application.cpp), [`main.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/src/app/main.cpp): Lifecycle manager and CLI entry point (`--smoke-test`, `--diag`).
-- [`tests/native_validation_tests.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/tests/native_validation_tests.cpp): 28 automated test suites (`Unit 1–15`, `Validation Tests A–J`, `Controlled Tests 1–3`).
+- [`tests/native_validation_tests.cpp`](file:///d:/%23%20My%20Folder/My%20Work/Visual%20Studio%20script/WebApplications/TorqueLab/tests/native_validation_tests.cpp): 41 automated test suites (`Unit 1–28`, `Validation Tests A–J`, `Controlled Tests 1–3`).
 
 ---
 
@@ -288,3 +289,50 @@ Any future code change must keep all 28 suites in `.\build\Release\TorqueLabNati
    - Wireframe cylinder rendering (`addCylinderXWireframe`) dynamically renders the exact physical `btCylinderShapeX` for each wheel at its true simulated position, compression, and steering angle in distinct Cyan (front) and Amber (rear) colors.
    - Visualizes circumferential obstacle contact points, resistance force arrows, and climbing traction vectors.
    - Interactive 4-wheel telemetry table highlights obstacle contact with live hit angle and force metrics.
+
+---
+
+## 11. Deformable Pneumatic Tyre Simulation, Multi-Point Contact Patch & Vertex Shader Deformation
+
+1. **Pneumatic Tyre Carcass Mechanics & Series Compliance (`PneumaticTire.cpp`, `VehicleDynamics.cpp`):**
+   - Structural Kelvin-Voigt viscoelastic carcass model with dynamic pressure dependence ($p \in [80, 400]\text{ kPa}$):
+     $$k_r(p) = k_{r,0} + C_{p,r}(p - p_0), \quad k_y(p) = k_{y,0} + C_{p,y}(p - p_0), \quad k_x(p) = k_{x,0} + C_{p,x}(p - p_0)$$
+   - Series spring equilibrium between suspension spring ($k_{\text{susp}}$) and tyre radial carcass ($k_{\text{tire}}$):
+     $$\frac{1}{k_{\text{eff}}} = \frac{1}{k_{\text{susp}}} + \frac{1}{k_{\text{tire}}}, \quad \delta_r = \Delta x_{\text{total}} \cdot \frac{k_{\text{susp}}}{k_{\text{susp}} + k_{\text{tire}}}$$
+   - Verified static equilibrium on flat ground with $0.000\%$ error ($F_z = 14715.0\text{ N}$).
+
+2. **Distributed Multi-Point Contact Patch Discretization:**
+   - Discretizes the rectangular tyre contact patch ($2 a \times W$) into runtime grids matching the collision fidelity modes:
+     - **Performance Mode:** 3 samples ($3 \times 1$ along centerline).
+     - **Balanced Mode:** 9 samples ($3 \times 3$ across inner shoulder, center, outer shoulder).
+     - **Detailed Mode:** 15 samples ($5 \times 3$ grid).
+   - Hertzian-like parabolic pressure profile: $w(u) = 0.20 + 0.80(1 - u^2)$, strictly normalized so $\sum w_j = 1.0$, guaranteeing total contact load identically equals axle normal load ($\sum F_{z, j} = F_z$).
+   - Longitudinal contact moment arm incorporates pneumatic trail ($t_p = 0.22 \cdot a$), generating physical self-aligning torque ($M_z = t_p \cdot F_y$) applied directly to the chassis body.
+
+3. **Strict Rigid Rim Protection in GLSL Shaders (`phong_shadow.vert`, `shadow_depth.vert`):**
+   - Evaluates vertex radial distance in wheel local cross-section: $r = \sqrt{P_{\text{wheelLocal}, y}^2 + P_{\text{wheelLocal}, z}^2}$.
+   - Rim threshold guard: If $r \le R_{\text{rim}}$, radial factor $f(r) = 0.0$ identically. Only outer rubber ($r \in [R_{\text{rim}}, R_0]$) undergoes deformation:
+     $$P_{\text{local}}' = P_{\text{local}} + \text{radialSquash} \cdot \vec{u}_r + \text{sidewallBulge} \cdot \vec{u}_{\text{axle}} + \text{lateralShear} \cdot \vec{u}_y + \text{longitudinalShear} \cdot \vec{u}_z$$
+   - Wheel hub, spokes, calipers, and rim beads remain completely rigid and pristine at all pressures and loads.
+
+4. **Thermodynamics, Wear Accumulation & Puncture Leakage:**
+   - First-law thermal energy balance: frictional sliding dissipation ($Q_{\text{slip}} = |\vec{F}_{\text{friction}} \cdot \vec{v}_{\text{slip}}|$) + cyclic carcass hysteresis ($Q_{\text{hyst}} = C_h \cdot \omega \cdot \delta_r \cdot F_z$) vs forced convective air cooling ($h_{\text{conv}} \propto 1 + 0.04 v$) and conductive ground transfer.
+   - Archard-inspired abrasive wear accumulation: $\Delta \text{wear} = K_w \frac{F_{\text{friction}} \cdot v_{\text{slip}}}{H} \Delta t$.
+   - Puncture orifice air leakage: $\dot{p} = -C_{\text{leak}} \sqrt{p - p_{\text{amb}}}$, causing observable carcass deflation, sidewall squashing, and increased rolling resistance.
+
+5. **Dear ImGui Pneumatic Tyre Dashboard & 3D Debug Overlays:**
+   - Real-time front and rear tyre pressure sliders ($100\text{--}350\text{ kPa}$ / $15\text{--}50\text{ PSI}$) with factory presets (`Factory M4`, `Dodge Track`, `High Speed`, `Comfort`).
+   - Puncture / Repair simulation buttons with live deflation rates.
+   - 4-wheel telemetry table showing deflection $\delta_r$, sidewall bulge $\Delta w$, lateral shear $\delta_y$, temperatures, wear, contact length, and self-aligning moments.
+   - 3D overlay rendering flattened contact patch rectangular footprint box, longitudinal centerline, bulging sidewall profiles, and multi-point sample contact force vectors.
+   - Live ground constraint status indicators: physical penetration $0.0\text{ mm}$, visual tread penetration $0.0\text{ mm}$, rigid rim protected.
+
+6. **Ground Penetration Elimination & World-Space Deformation (`phong_shadow.vert`, `shadow_depth.vert`, `Mesh.cpp`):**
+   - **Root Cause Diagnosis (Case C):** Series compliance lowers the physical wheel hub by $\delta_r$ ($Y_{\text{hub}} = R_0 - \delta_r$) so normal forces balance vehicle mass at $Y = 0.0$ ($0.000\%$ error). However, undeformed wheel radius $R_0$ placed bottom vertices at $Y = -\delta_r$ (e.g., $-2.2\text{ cm}$). When vertex deformation was computed in local `aPos` space using an empirical angular decay curve, the displacement dropped faster than the circular arc depth, causing tread vertices in the contact zone to sag up to $7\text{ mm}$ below the asphalt and appear clipped or phasing through the ground. Furthermore, imported glTF meshes had node hierarchies and scale offsets that distorted local radius evaluations.
+   - **World-Space Invariant Constraint:** Vertices are transformed to world coordinates first ($P_{\text{world}} = uModel \cdot aPos$). The exact signed perpendicular distance to the road plane is calculated:
+     $$d_{\text{ground}} = (P_{\text{world}} - P_{\text{ground}}) \cdot \hat{n}_{\text{ground}}$$
+     When penetrating ($d_{\text{ground}} < 0$), vertices are lifted along $\hat{n}_{\text{ground}}$ by exactly $(-d_{\text{ground}} + \text{edgeRounding}) \cdot \eta_{\text{smooth}}$, guaranteeing that deformed contact tread vertices meet the road surface flush at $d_{\text{ground}} = 0.000\text{ m}$ without knife-edges or center craters.
+   - **Dedicated Procedural Pneumatic Tyre Mesh (`Mesh::createPneumaticTireMesh`):** Built with 64 radial segments, 6 concentric sidewall rings, crowned tread band, and distinct bead seats, providing smooth vertex density across the deformation zone.
+   - **Dielectric Carbon Black PBR Material:** `roughness = 0.82`, `metalness = 0.00`, `baseColor = #1c1f24`, applied across procedural wheels and manifests (`BMW_M4_manifest.json`, `Dodge_Challenger_manifest.json`).
+   - **Directional Shadow Depth Parity (`shadow_depth.vert`):** World-space ground flattening and sidewall bulging are mirrored identically in the shadow pass, casting accurate deformed tyre silhouettes onto the track.
+   - **Automated Verification (`Unit 28`):** Rigorously verifies zero penetration ($d_{\text{ground}} \ge -0.0001\text{ m}$), flush contact patch ($Y = 0.000\text{ m}$), strict rigid rim protection ($r \le R_{\text{rim}} \implies |\Delta P| = 0$), and monotonic curvature continuity.

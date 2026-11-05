@@ -55,6 +55,7 @@ struct LoadedModelPart {
     bool isBrakeLight{false};
     bool isReverseLight{false};
     bool isTransparent{false};
+    bool isTire{false};
 
     // For wheel components: offset relative to the calculated wheel rotation pivot
     Vec3 offsetFromWheelCenter{0.0, 0.0, 0.0};
@@ -71,6 +72,7 @@ struct LoadedVehicleModel {
     // Retained CPU Collision Geometry (Model Space)
     RawMeshGeometry chassisCollisionMesh; // Accumulated chassis body triangles in local model space
     std::array<RawMeshGeometry, 4> wheelMeshes; // Wheels in quadrant 0=FL, 1=FR, 2=RL, 3=RR
+    std::array<RawMeshGeometry, 4> tireMeshes;  // Dedicated pure rubber tyre geometry in quadrant 0..3
 
     // Identified wheel pivot centers in the model's coordinate frame
     std::array<Vec3, 4> modelWheelCenters{

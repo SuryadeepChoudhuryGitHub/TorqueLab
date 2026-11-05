@@ -40,6 +40,13 @@ public:
 
     bool enabled{true};
     bool showCollisionWireframe{true};
+    bool showWheelColliders{true};
+    bool showWheelAxes{true};
+    bool showSuspensionTravel{true};
+    bool showContactForces{true};
+    bool showAlignmentDiagnostics{true};
+    bool showTireDeformation{true};
+    bool showContactPatchSamples{true};
 
 private:
     struct LineVertex {

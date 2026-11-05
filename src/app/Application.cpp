@@ -231,6 +231,16 @@ bool Application::init(int width, int height, bool visible) {
             for (int i = 0; i < 20; ++i) m_physicsWorld->stepFixed();
             m_vehicleRenderer.syncWithVehicle(*m_physicsWorld->vehicle, 1.0);
             m_dashboard->showValidationReport("Regenerated collision: " + std::string(getStrategyName(strategy)), true);
+        },
+        [this](WheelCollisionFidelity fidelity) {
+            if (m_physicsWorld && m_physicsWorld->vehicle) {
+                m_physicsWorld->vehicle->setCollisionFidelity(fidelity);
+            }
+        },
+        [this](bool enable) {
+            if (m_physicsWorld && m_physicsWorld->vehicle) {
+                m_physicsWorld->vehicle->config.enableStationaryHold = enable;
+            }
         }
     });
 
@@ -405,6 +415,7 @@ int Application::run(int maxFrames) {
 
     while (!glfwWindowShouldClose(m_window)) {
         const double t0 = glfwGetTime();
+        (void)t0;
         glfwPollEvents();
         const double t1 = glfwGetTime();
 

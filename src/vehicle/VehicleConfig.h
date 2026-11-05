@@ -30,6 +30,12 @@ enum class CollisionShapeType {
     Box
 };
 
+enum class WheelCollisionFidelity {
+    Performance = 0, // Fast 5-probe single-plane query, minimal CPU overhead
+    Balanced = 1,    // 9-probe 3-slice circumferential volume, accurate for curbs & steps
+    Detailed = 2     // 17-probe 5-slice multi-angle circumferential hull + sidewall queries
+};
+
 struct TorqueCurvePoint {
     double rpm{0.0};
     double torqueNm{0.0};
@@ -105,6 +111,18 @@ struct VehicleConfig {
     double nominalTireLoad{3700.0};         // Reference vertical load per tire F_z0 (N)
     double tireForceApplicationHeightOffset{0.06}; // Height above ground contact where forces act (m)
 
+    // --- Deformable Pneumatic Tyre Specification ---
+    double tireNominalPressureKpa{220.0};   // Standard cold inflation pressure (kPa)
+    double frontTirePressureKpa{220.0};     // Front axle inflation pressure (kPa)
+    double rearTirePressureKpa{220.0};      // Rear axle inflation pressure (kPa)
+    double tireRimRadius{0.22};             // Rigid wheel rim radius (m)
+    double frontTireRimRadius{0.22};        // Front wheel rim radius (m)
+    double rearTireRimRadius{0.22};         // Rear wheel rim radius (m)
+    double tireRadialStiffnessBase{180000.0}; // Base radial carcass stiffness at nominal pressure (N/m)
+    double tireRadialStiffnessPressureCoeff{0.48}; // Radial stiffness pressure coefficient (N/(m*Pa))
+    double tireLateralStiffnessBase{140000.0};     // Base lateral carcass stiffness (N/m)
+    double tireLongitudinalStiffnessBase{190000.0}; // Base longitudinal carcass stiffness (N/m)
+
     // --- Steering System ---
     double maxSteeringAngle{0.60};          // Maximum front wheel steering angle at low speed (rad, ~34.4 deg)
     double steeringSpeed{2.6};              // Steering actuator rate when turning (rad/s)
@@ -150,6 +168,10 @@ struct VehicleConfig {
     double frontalArea{2.15};               // Vehicle frontal area A (m^2)
     double downforceCoefficient{0.18};      // Aerodynamic downforce coefficient C_L
     double rollingResistanceCoeff{0.014};   // Baseline tire rolling resistance coefficient C_rr
+
+    // --- Wheel Physics Fidelity & Stationary Stability ---
+    WheelCollisionFidelity wheelCollisionFidelity{WheelCollisionFidelity::Balanced};
+    bool enableStationaryHold{true};         // Coulomb stiction & zero-creep holding when stopped
 };
 
 /** Built-in vehicle presets */
@@ -179,6 +201,22 @@ inline double getWheelWidth(const VehicleConfig& config, int wheelIndex) {
         return (config.frontWheelWidth > 0.05) ? config.frontWheelWidth : config.wheelWidth;
     }
     return (config.rearWheelWidth > 0.05) ? config.rearWheelWidth : config.wheelWidth;
+}
+
+/** Helper to access per-wheel rigid rim radius */
+inline double getTireRimRadius(const VehicleConfig& config, int wheelIndex) {
+    if (wheelIndex < 2) {
+        return (config.frontTireRimRadius > 0.05) ? config.frontTireRimRadius : config.tireRimRadius;
+    }
+    return (config.rearTireRimRadius > 0.05) ? config.rearTireRimRadius : config.tireRimRadius;
+}
+
+/** Helper to access per-wheel inflation pressure (in kPa) */
+inline double getTirePressureKpa(const VehicleConfig& config, int wheelIndex) {
+    if (wheelIndex < 2) {
+        return (config.frontTirePressureKpa > 10.0) ? config.frontTirePressureKpa : config.tireNominalPressureKpa;
+    }
+    return (config.rearTirePressureKpa > 10.0) ? config.rearTirePressureKpa : config.tireNominalPressureKpa;
 }
 
 /** Local mount positions */

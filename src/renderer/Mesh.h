@@ -37,6 +37,7 @@ public:
     static Mesh createBox(float width, float height, float depth);
     static Mesh createCylinderY(float radiusTop, float radiusBottom, float height, int radialSegments = 24);
     static Mesh createCylinderX(float radiusTop, float radiusBottom, float width, int radialSegments = 24);
+    static Mesh createPneumaticTireMesh(float outerRadius, float rimRadius, float width, int radialSegments = 64, int sidewallRings = 6, int treadSegments = 8);
     static Mesh createTorusZ(float radius, float tubeRadius, int radialSegments = 10, int tubularSegments = 24);
     static Mesh createSphere(float radius, int rings = 14, int sectors = 18);
     static Mesh createPlaneXZ(float width, float depth);

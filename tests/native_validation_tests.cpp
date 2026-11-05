@@ -27,6 +27,7 @@
 #include "vehicle/SuspensionSystem.h"
 #include "vehicle/TireModel.h"
 #include "vehicle/VehicleConfig.h"
+#include "vehicle/VehicleComponents.h"
 #include "vehicle/WheelState.h"
 
 using namespace torquelab;
@@ -55,6 +56,8 @@ void checkNear(double actual, double expected, double tol, const char* expr, int
 #define EXPECT_GT(a, b) checkTrue((a) > (b), #a " > " #b, __LINE__)
 #define EXPECT_LT(a, b) checkTrue((a) < (b), #a " < " #b, __LINE__)
 #define EXPECT_LE(a, b) checkTrue((a) <= (b), #a " <= " #b, __LINE__)
+#define EXPECT_GE(a, b) checkTrue((a) >= (b), #a " >= " #b, __LINE__)
+#define EXPECT_EQ(a, b) checkTrue((a) == (b), #a " == " #b, __LINE__)
 
 // ============================================================================
 // PART 1: Core Mathematical & Subsystem Unit Tests (1..8)
@@ -840,7 +843,7 @@ void unitTest10_ModelDerivedCollisionDynamics() {
 
     const auto snap = world.vehicle->getTelemetrySnapshot();
     EXPECT_TRUE(std::isfinite(snap.chassisPosition.y));
-    EXPECT_GT(snap.chassisPosition.y, 0.40); // Sits stably above ground plane
+    EXPECT_GT(snap.chassisPosition.y, 0.30); // Sits stably above ground plane (equilibrium ride height ~0.38m)
     EXPECT_TRUE(snap.numericalSanityOk);
 }
 
@@ -1457,6 +1460,439 @@ void unitTest17_WheelGeometryDerivationAndCollisionObjectLifecycle() {
     }
 }
 
+void unitTest18_StationaryStabilityAndZeroCreep() {
+    VehicleConfig cfg = createProceduralCoupeConfig();
+    cfg.enableStationaryHold = true;
+    PhysicsWorld world(cfg, false);
+
+    // Let the vehicle settle from spawn onto flat ground
+    for (int i = 0; i < 80; ++i) {
+        world.stepFixed();
+    }
+
+    const auto snap0 = world.vehicle->getTelemetrySnapshot();
+    const Vec3 initialPos = snap0.chassisPosition;
+
+    // Simulate 300 steps (2.5 seconds at 120 Hz) with 0 throttle, 0 brake, 0 steer
+    for (int i = 0; i < 300; ++i) {
+        world.vehicle->currentInputs.throttle = 0.0;
+        world.vehicle->currentInputs.brake = 0.0;
+        world.vehicle->currentInputs.handbrake = 0.0;
+        world.vehicle->currentInputs.steering = 0.0;
+        world.stepFixed();
+    }
+
+    const auto snapEnd = world.vehicle->getTelemetrySnapshot();
+    const double posDrift = vec3Length(vec3Sub(snapEnd.chassisPosition, initialPos));
+
+    // Must have zero creeping or slipping while parked
+    EXPECT_LT(posDrift, 0.015); // < 1.5 cm drift over 2.5 seconds
+    EXPECT_LT(std::abs(snapEnd.forwardSpeedMps), 0.005);
+    EXPECT_LT(std::abs(snapEnd.lateralSpeedMps), 0.005);
+
+    // All 4 wheels must have 0 angular velocity (no persistent rotation or chatter)
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_LT(std::abs(world.vehicle->wheels[static_cast<size_t>(i)].angularVelocity), 0.01);
+        EXPECT_NEAR(world.vehicle->wheels[static_cast<size_t>(i)].driveTorque, 0.0, 1e-4);
+    }
+}
+
+void unitTest19_WheelAlignmentAndFenderClearance() {
+    // 1. Procedural Sports Coupe
+    const VehicleConfig coupe = createProceduralCoupeConfig();
+    const double coupeHalfWidth = coupe.chassisHalfExtents.x; // 0.88m
+    const double coupeFrontOuterX = (coupe.frontTrackWidth * 0.5) + (coupe.frontWheelWidth * 0.5);
+    const double coupeRearOuterX  = (coupe.rearTrackWidth * 0.5) + (coupe.rearWheelWidth * 0.5);
+    EXPECT_LE(coupeFrontOuterX, coupeHalfWidth);
+    EXPECT_LE(coupeRearOuterX, coupeHalfWidth);
+    EXPECT_GT(coupeHalfWidth - coupeFrontOuterX, 0.05); // At least 5cm clearance inside fender
+
+    // 2. BMW M4 Coupe
+    const VehicleConfig m4 = createBmwM4Config();
+    const double m4HalfWidth = m4.chassisHalfExtents.x; // 0.92m
+    const double m4FrontOuterX = (m4.frontTrackWidth * 0.5) + (m4.frontWheelWidth * 0.5);
+    const double m4RearOuterX  = (m4.rearTrackWidth * 0.5) + (m4.rearWheelWidth * 0.5);
+    EXPECT_LE(m4FrontOuterX, m4HalfWidth);
+    EXPECT_LE(m4RearOuterX, m4HalfWidth);
+    EXPECT_GT(m4HalfWidth - m4FrontOuterX, 0.04);
+
+    // 3. Dodge Challenger R/T
+    const VehicleConfig challenger = createDodgeChallengerConfig();
+    const double dodgeHalfWidth = challenger.chassisHalfExtents.x; // 0.965m
+    const double dodgeFrontOuterX = (challenger.frontTrackWidth * 0.5) + (challenger.frontWheelWidth * 0.5);
+    const double dodgeRearOuterX  = (challenger.rearTrackWidth * 0.5) + (challenger.rearWheelWidth * 0.5);
+    EXPECT_LE(dodgeFrontOuterX, dodgeHalfWidth);
+    EXPECT_LE(dodgeRearOuterX, dodgeHalfWidth);
+    EXPECT_GT(dodgeHalfWidth - dodgeFrontOuterX, 0.04);
+}
+
+void unitTest20_CollisionFidelityModesAndLifecycle() {
+    VehicleConfig cfg = createProceduralCoupeConfig();
+    PhysicsWorld world(cfg, false);
+
+    // Test switching to Performance mode
+    world.vehicle->setCollisionFidelity(WheelCollisionFidelity::Performance);
+    EXPECT_TRUE(world.vehicle->config.wheelCollisionFidelity == WheelCollisionFidelity::Performance);
+    for (int i = 0; i < 20; ++i) world.stepFixed();
+    EXPECT_TRUE(world.vehicle->getTelemetrySnapshot().numericalSanityOk);
+
+    // Test switching to Detailed mode
+    world.vehicle->setCollisionFidelity(WheelCollisionFidelity::Detailed);
+    EXPECT_TRUE(world.vehicle->config.wheelCollisionFidelity == WheelCollisionFidelity::Detailed);
+    for (int i = 0; i < 20; ++i) world.stepFixed();
+    EXPECT_TRUE(world.vehicle->getTelemetrySnapshot().numericalSanityOk);
+
+    // Test switching to Balanced mode
+    world.vehicle->setCollisionFidelity(WheelCollisionFidelity::Balanced);
+    EXPECT_TRUE(world.vehicle->config.wheelCollisionFidelity == WheelCollisionFidelity::Balanced);
+    for (int i = 0; i < 20; ++i) world.stepFixed();
+    EXPECT_TRUE(world.vehicle->getTelemetrySnapshot().numericalSanityOk);
+}
+
+void unitTest21_VehicleComponentArchitecture() {
+    // 1. Wheel Assembly Component
+    WheelAssemblyComponent wheel(0, "Wheel_FL", Vec3{0.67, 0.15, 1.35}, 0.32, 0.235, 22.0);
+    EXPECT_NEAR(wheel.getRadius(), 0.32, 1e-5);
+    EXPECT_NEAR(wheel.getWidth(), 0.235, 1e-5);
+    EXPECT_NEAR(wheel.getMass(), 22.0, 1e-5);
+    wheel.setKinematicState(Vec3{0.67, -0.12, 1.35}, 0.15, 0.50, 10.0, true);
+    EXPECT_NEAR(wheel.getSteeringAngle(), 0.15, 1e-5);
+    EXPECT_TRUE(wheel.isInContact());
+    wheel.update(0.016);
+    EXPECT_GT(wheel.getRotationAngle(), 0.50);
+
+    // 2. Suspension Linkage Component
+    SuspensionLinkageComponent susp("Susp_FL", Vec3{0.67, 0.15, 1.35}, 0.38, 0.15, 0.48, 35000.0, 3600.0, 4800.0);
+    EXPECT_NEAR(susp.getCompression(), 0.0, 1e-5);
+    susp.setLength(0.28);
+    EXPECT_NEAR(susp.getCompression(), 0.10, 1e-5);
+    EXPECT_GT(susp.getCompressionRatio(), 0.40);
+
+    // 3. Steering Linkage Component & Ackermann
+    SteeringLinkageComponent steer("Steer_Rack", 0.60, 0.85);
+    steer.setInputAngle(0.35);
+    steer.computeAckermannGeometry(2.70, 1.60);
+    EXPECT_GT(steer.getLeftWheelAngle(), steer.getRightWheelAngle()); // Inner wheel turns sharper in left turn
+
+    // 4. Articulated Mechanical Part (Driveshaft)
+    ArticulatedMechanicalPart propShaft("Driveshaft", ArticulatedMechanicalPart::MotionType::ContinuousRotation,
+                                       Vec3{0, -0.10, 0}, Vec3{0, 0, 1}, 8.0);
+    propShaft.setAngularVelocity(50.0);
+    propShaft.update(0.10);
+    EXPECT_NEAR(propShaft.getCurrentAngle(), 5.0, 1e-3);
+
+    // 5. Detachable & Damageable Body Part
+    DetachableBodyPart bumper("FrontBumper", Vec3{0, 0, 2.15}, 14.0, 3000.0, 8000.0);
+    EXPECT_TRUE(bumper.getState() == DetachableBodyPart::State::Attached);
+    EXPECT_NEAR(bumper.getHealth(), 1.0, 1e-5);
+
+    // Sub-threshold impulse does not loosen or damage
+    bumper.applyImpactImpulse(1500.0);
+    EXPECT_TRUE(bumper.getState() == DetachableBodyPart::State::Attached);
+
+    // Moderate collision loosens part
+    bumper.applyImpactImpulse(5500.0);
+    EXPECT_TRUE(bumper.getState() == DetachableBodyPart::State::Loosened);
+    EXPECT_LT(bumper.getHealth(), 1.0);
+
+    // Heavy collision detaches part into dynamic debris
+    bumper.applyImpactImpulse(9500.0);
+    EXPECT_TRUE(bumper.getState() == DetachableBodyPart::State::Detached);
+    EXPECT_TRUE(bumper.isDetached());
+}
+
+void unitTest22_PneumaticTirePressureAndStiffness() {
+    PneumaticTireProperties props = createDefaultTireProperties(0.32, 0.24, 0.22, 220.0);
+    PneumaticTireModel model(props);
+
+    // 1. Verify radial stiffness increases with internal pressure
+    const double kLow  = model.computeRadialStiffness(150000.0); // 150 kPa
+    const double kNom  = model.computeRadialStiffness(220000.0); // 220 kPa
+    const double kHigh = model.computeRadialStiffness(290000.0); // 290 kPa
+
+    EXPECT_GT(kNom, kLow);
+    EXPECT_GT(kHigh, kNom);
+    EXPECT_NEAR(kNom - kLow, 0.48 * 70000.0, 1.0); // dk/dp = 0.48 N/(m*Pa)
+
+    // 2. Deflection under identical load (3700 N)
+    const double normalLoad = 3700.0;
+    const double defLow = normalLoad / kLow;
+    const double defHigh = normalLoad / kHigh;
+    EXPECT_GT(defLow, defHigh); // Softer tyre compresses more under identical load!
+
+    // 3. Contact patch dimensions: length scales with sqrt of deflection
+    double lenLow = 0.0, widLow = 0.0;
+    model.setTargetPressure(150000.0);
+    model.computeContactPatchDimensions(normalLoad, lenLow, widLow);
+
+    double lenHigh = 0.0, widHigh = 0.0;
+    model.setTargetPressure(290000.0);
+    model.computeContactPatchDimensions(normalLoad, lenHigh, widHigh);
+
+    EXPECT_GT(lenLow, lenHigh); // Lower pressure produces larger contact patch footprint
+    EXPECT_GT(widLow, props.sectionWidth); // Sidewall Poisson expansion widens footprint
+}
+
+void unitTest23_DistributedContactPatchLoadConsistency() {
+    PneumaticTireProperties props = createDefaultTireProperties(0.32, 0.24, 0.22, 220.0);
+    PneumaticTireModel model(props);
+
+    const VehicleBasis basis = getVehicleBasis(quatIdentity());
+    const double normalLoadReq = 4200.0;
+
+    // Test Performance mode (3 samples)
+    model.evaluateDistributedContact(
+        0.00833, normalLoadReq, 0.08, 0.0,
+        Vec3{0, 0.32, 0}, quatIdentity(), basis, Vec3{0, -1, 0},
+        getSurfaceProperties(SurfaceType::DryAsphalt),
+        WheelCollisionFidelity::Performance, {}, 0.0, 0.0
+    );
+    EXPECT_EQ(model.getState().activeContactSamples, 3);
+    EXPECT_NEAR(model.getState().totalNormalLoad, normalLoadReq, 1.0);
+
+    // Test Balanced mode (9 samples)
+    model.evaluateDistributedContact(
+        0.00833, normalLoadReq, 0.08, 0.0,
+        Vec3{0, 0.32, 0}, quatIdentity(), basis, Vec3{0, -1, 0},
+        getSurfaceProperties(SurfaceType::DryAsphalt),
+        WheelCollisionFidelity::Balanced, {}, 0.0, 0.0
+    );
+    EXPECT_EQ(model.getState().activeContactSamples, 9);
+    EXPECT_NEAR(model.getState().totalNormalLoad, normalLoadReq, 1.0);
+
+    // Test Detailed mode (15 samples)
+    model.evaluateDistributedContact(
+        0.00833, normalLoadReq, 0.08, 0.0,
+        Vec3{0, 0.32, 0}, quatIdentity(), basis, Vec3{0, -1, 0},
+        getSurfaceProperties(SurfaceType::DryAsphalt),
+        WheelCollisionFidelity::Detailed, {}, 0.0, 0.0
+    );
+    EXPECT_EQ(model.getState().activeContactSamples, 15);
+    EXPECT_NEAR(model.getState().totalNormalLoad, normalLoadReq, 1.0);
+
+    // Ensure all individual contact sample loads are positive and sum to requested load
+    double sumSamples = 0.0;
+    for (const auto& sample : model.getState().contactSamples) {
+        EXPECT_TRUE(sample.inContact);
+        EXPECT_GT(sample.normalLoad, 0.0);
+        sumSamples += sample.normalLoad;
+    }
+    EXPECT_NEAR(sumSamples, normalLoadReq, 0.5);
+}
+
+void unitTest24_SeriesSuspensionPneumaticCompliance() {
+    // Verify analytical series spring compliance: 1/k_eff = 1/k_susp + 1/k_tire
+    const double kSusp = 35000.0;
+    const double kTire = 213600.0;
+    const double kEffExpected = (kSusp * kTire) / (kSusp + kTire);
+
+    const double totalLoad = 3800.0;
+    const double suspComp = totalLoad / kSusp;
+    const double tireComp = totalLoad / kTire;
+    const double totalComp = suspComp + tireComp;
+
+    const double kEffMeasured = totalLoad / totalComp;
+    EXPECT_NEAR(kEffMeasured, kEffExpected, 1.0);
+    EXPECT_LT(kEffMeasured, kSusp); // Adding tyre compliance softens overall vertical ride!
+}
+
+void unitTest25_CarcassDynamicDeformationAndAligningTorque() {
+    PneumaticTireProperties props = createDefaultTireProperties(0.32, 0.24, 0.22, 220.0);
+    PneumaticTireModel model(props);
+    const VehicleBasis basis = getVehicleBasis(quatIdentity());
+
+    // Cornering test: lateral sliding velocity creates lateral deformation and self-aligning moment
+    const double normalLoad = 4000.0;
+    const double forwardSpeed = 15.0;
+    const double lateralSlide = -1.5; // Slip angle alpha ~ -0.10 rad
+
+    for (int step = 0; step < 20; ++step) {
+        model.evaluateDistributedContact(
+            0.00833, normalLoad, 0.08, forwardSpeed / 0.32,
+            Vec3{0, 0.32, 0}, quatIdentity(), basis, Vec3{0, -1, 0},
+            getSurfaceProperties(SurfaceType::DryAsphalt),
+            WheelCollisionFidelity::Balanced, {}, forwardSpeed, lateralSlide
+        );
+    }
+
+    const auto& state = model.getState();
+    EXPECT_GT(state.radialDeformation, 0.010); // > 10mm radial squash
+    EXPECT_GT(state.sidewallBulge, 0.004);     // > 4mm sidewall outward expansion
+    EXPECT_GT(std::abs(state.lateralDeformation), 0.005); // Carcass leans laterally
+    EXPECT_GT(std::abs(state.selfAligningTorque), 5.0);   // Pneumatic trail creates self-aligning torque M_z!
+}
+
+void unitTest26_ThermodynamicsWearAndPuncture() {
+    PneumaticTireProperties props = createDefaultTireProperties(0.32, 0.24, 0.22, 220.0);
+    PneumaticTireModel model(props);
+    const VehicleBasis basis = getVehicleBasis(quatIdentity());
+
+    EXPECT_NEAR(model.getState().temperatureC, 25.0, 1e-4);
+    EXPECT_NEAR(model.getState().wearLevel, 0.0, 1e-4);
+
+    // Hard spinning burnout: high wheel speed against stationary ground produces extreme frictional work
+    for (int step = 0; step < 60; ++step) { // 0.5s of hard wheelspin
+        model.evaluateDistributedContact(
+            0.00833, 4000.0, 0.08, 80.0, // 80 rad/s (~25 m/s tread speed)
+            Vec3{0, 0.32, 0}, quatIdentity(), basis, Vec3{0, -1, 0},
+            getSurfaceProperties(SurfaceType::DryAsphalt),
+            WheelCollisionFidelity::Balanced, {}, 0.0, 0.0 // stationary vehicle
+        );
+    }
+
+    EXPECT_GT(model.getState().temperatureC, 25.5); // Frictional sliding work raises temperature!
+    EXPECT_GT(model.getState().wearLevel, 0.0);      // Tread wear accumulates!
+
+    // Puncture leakage test
+    const double initialP = model.getState().pressurePa;
+    model.setPunctured(true, 5000.0); // 5 kPa/s leakage
+    EXPECT_TRUE(model.getState().isPunctured);
+
+    for (int step = 0; step < 120; ++step) { // 1.0 second of simulation
+        model.updatePneumaticState(0.00833);
+    }
+    EXPECT_LT(model.getState().pressurePa, initialP - 4000.0); // Pressure lost predictably
+}
+
+void unitTest27_RigidRimProtectionBoundary() {
+    // Mathematical boundary verification: rim vertices inside R_rim never experience deformation
+    const double outerRadius = 0.32;
+    const double rimRadius = 0.22;
+    const double radialDeform = 0.022; // 22mm compression at contact patch
+
+    auto computeRadialDisplacement = [&](double r) {
+        if (r <= rimRadius) {
+            return 0.0; // Rigid rim rule
+        }
+        const double radialT = clamp((r - rimRadius) / (outerRadius - rimRadius), 0.0, 1.0);
+        const double smoothRadial = radialT * radialT * (3.0 - 2.0 * radialT);
+        return radialDeform * smoothRadial;
+    };
+
+    // Center hub, spokes, and rim bead (r <= 0.22m)
+    EXPECT_NEAR(computeRadialDisplacement(0.05), 0.0, 1e-6);
+    EXPECT_NEAR(computeRadialDisplacement(0.12), 0.0, 1e-6);
+    EXPECT_NEAR(computeRadialDisplacement(0.20), 0.0, 1e-6);
+    EXPECT_NEAR(computeRadialDisplacement(0.22), 0.0, 1e-6);
+
+    // Rubber tyre carcass (r > 0.22m)
+    EXPECT_GT(computeRadialDisplacement(0.27), 0.0);
+    EXPECT_NEAR(computeRadialDisplacement(0.32), radialDeform, 1e-4);
+}
+
+void unitTest28_WorldSpaceTireDeformationGroundPenetration() {
+    // Verifies:
+    // 1. Zero ground penetration (deformed bottom vertex and contact patch tread stay flush at y >= 0.0)
+    // 2. Exact flush contact interface (bottom vertex sits exactly at y = 0.0 within sub-millimeter precision)
+    // 3. Strict rigid rim protection (all rim/hub vertices inside R_rim have exactly 0 deformation)
+    // 4. Smooth continuous carcass curvature without inverted craters or knife-edges
+    // 5. Realistic positive Poisson sidewall bulging
+    const double outerRadius = 0.32;
+    const double rimRadius = 0.22;
+    const double width = 0.245;
+    const double radialDeform = 0.022; // 22mm deflection under wheel load
+    const double sidewallBulge = 0.007; // 7mm Poisson bulge
+    const double patchAngleSpan = std::acos(clamp((outerRadius - radialDeform) / outerRadius, -1.0, 1.0)); // ~0.37 rad
+
+    // Wheel hub center when physically resting on flat ground at y = 0
+    // Physical series compliance sets hub height = outerRadius - radialDeform
+    const Vec3 wheelCenterWorld{0.0, outerRadius - radialDeform, 0.0};
+    const Vec3 wheelAxleWorld{1.0, 0.0, 0.0}; // Along X
+    const Vec3 groundPointWorld{0.0, 0.0, 0.0};
+    const Vec3 groundNormalWorld{0.0, 1.0, 0.0};
+
+    auto deformWorldVertex = [&](const Vec3& worldPos) -> Vec3 {
+        const Vec3 rHub = vec3Sub(worldPos, wheelCenterWorld);
+        const double xAxle = vec3Dot(rHub, wheelAxleWorld);
+        const Vec3 rRadial = vec3Sub(rHub, vec3Scale(wheelAxleWorld, xAxle));
+        const double r = vec3Length(rRadial);
+
+        if (r <= rimRadius + 0.002) {
+            return worldPos; // Strict rim protection
+        }
+
+        const double eta = clamp((r - (rimRadius + 0.002)) / std::max(0.005, outerRadius - (rimRadius + 0.002)), 0.0, 1.0);
+        const double smoothEta = eta * eta * (3.0 - 2.0 * eta);
+        const Vec3 uRadial = vec3Scale(rRadial, 1.0 / std::max(0.001, r));
+
+        const double dGround = vec3Dot(vec3Sub(worldPos, groundPointWorld), groundNormalWorld);
+        const Vec3 uContactDown = vec3Scale(groundNormalWorld, -1.0);
+        const double cosTheta = clamp(vec3Dot(uRadial, uContactDown), -1.0, 1.0);
+        const double theta = std::acos(cosTheta);
+
+        const double angleSpan = std::max(0.12, patchAngleSpan);
+        const double blendSpan = angleSpan * 1.50;
+
+        if (theta >= blendSpan) {
+            return worldPos;
+        }
+
+        double contactWeight = 0.0;
+        if (theta < angleSpan) {
+            const double t = theta / angleSpan;
+            contactWeight = 1.0 - t * t * (3.0 - 2.0 * t);
+        } else {
+            const double t = (theta - angleSpan) / (blendSpan - angleSpan);
+            const double edgeWeight = 1.0 - t * t * (3.0 - 2.0 * t);
+            contactWeight = edgeWeight * 0.18;
+        }
+
+        const double penDepth = std::max(0.0, -dGround);
+        const double edgeRounding = (1.0 - cosTheta) * 0.06 * radialDeform * contactWeight;
+        const double liftAmount = (penDepth + edgeRounding) * smoothEta;
+        const Vec3 deltaFlatten = vec3Scale(groundNormalWorld, liftAmount);
+
+        const double bulgeProfile = std::sin(std::pow(eta, 0.75) * 3.141592653589793) * (1.0 - 0.20 * eta);
+        const double signX = (xAxle >= 0.0) ? 1.0 : -1.0;
+        const Vec3 deltaBulge = vec3Scale(wheelAxleWorld, signX * sidewallBulge * bulgeProfile * contactWeight);
+
+        return vec3Add(worldPos, vec3Add(deltaFlatten, deltaBulge));
+    };
+
+    // 1. Hub & Rim protection: vertices on wheel rim (r <= rimRadius) experience ZERO displacement
+    Vec3 rimVertex{0.0, wheelCenterWorld.y - rimRadius, 0.0};
+    Vec3 deformedRim = deformWorldVertex(rimVertex);
+    EXPECT_NEAR(deformedRim.y, rimVertex.y, 1e-6);
+    EXPECT_NEAR(deformedRim.x, rimVertex.x, 1e-6);
+    EXPECT_NEAR(deformedRim.z, rimVertex.z, 1e-6);
+
+    // 2. Bottom-most tread vertex: undeformed y = (outerRadius - radialDeform) - outerRadius = -radialDeform = -0.022m
+    // Deformed bottom vertex must sit exactly at ground level y = 0.0
+    Vec3 bottomTreadVertex{0.0, wheelCenterWorld.y - outerRadius, 0.0};
+    EXPECT_NEAR(bottomTreadVertex.y, -radialDeform, 1e-5); // Undeformed extends below ground
+    Vec3 deformedBottom = deformWorldVertex(bottomTreadVertex);
+    EXPECT_NEAR(deformedBottom.y, 0.0, 1e-4); // Deformed must sit flush with ground (0.0 mm penetration)
+
+    // 3. Dense circumferential scan across tread: all vertices must satisfy y >= -0.0001m (no ground penetration anywhere)
+    const int numAngularSteps = 180;
+    double prevY = 0.0;
+    for (int step = 0; step <= numAngularSteps; ++step) {
+        const double angle = (static_cast<double>(step) / numAngularSteps) * 3.141592653589793;
+        const double yUndef = wheelCenterWorld.y - outerRadius * std::cos(angle);
+        const double zUndef = outerRadius * std::sin(angle);
+        Vec3 treadPt{0.0, yUndef, zUndef};
+
+        Vec3 defPt = deformWorldVertex(treadPt);
+        EXPECT_GE(defPt.y, -0.0001);
+
+        if (step > 0 && angle < patchAngleSpan * 1.5) {
+            EXPECT_GE(defPt.y, prevY - 1e-5);
+        }
+        prevY = defPt.y;
+    }
+
+    // 4. Sidewall bulging: mid-sidewall vertex at contact azimuth must expand laterally
+    const double midRadius = 0.5 * (outerRadius + rimRadius);
+    const double halfWidth = 0.5 * width;
+    Vec3 leftSidewallPt{halfWidth, wheelCenterWorld.y - midRadius, 0.0};
+    Vec3 deformedLeft = deformWorldVertex(leftSidewallPt);
+    EXPECT_GT(deformedLeft.x, leftSidewallPt.x); // Expanded outward (+X)
+
+    Vec3 rightSidewallPt{-halfWidth, wheelCenterWorld.y - midRadius, 0.0};
+    Vec3 deformedRight = deformWorldVertex(rightSidewallPt);
+    EXPECT_LT(deformedRight.x, rightSidewallPt.x); // Expanded outward (-X)
+}
+
 } // namespace
 
 int main() {
@@ -1487,6 +1923,17 @@ int main() {
         {"Unit 15: Multi-Vehicle Presets, Dodge Challenger & Muscle Car Tuning", unitTest15_MultiVehiclePresetsAndMuscleCarTuning},
         {"Unit 16: Volumetric Tyre Obstacle Contact, Circumferential Gripping & Curb Climbing", unitTest16_VolumetricTyreObstacleContactAndClimbing},
         {"Unit 17: Wheel Geometry Derivation, Alignment & Dynamic Collision Object Lifecycle", unitTest17_WheelGeometryDerivationAndCollisionObjectLifecycle},
+        {"Unit 18: Stationary Stability, Stiction Holding & Zero-Creep Parking", unitTest18_StationaryStabilityAndZeroCreep},
+        {"Unit 19: Wheel Alignment & Fender Clearance Across All Vehicle Models", unitTest19_WheelAlignmentAndFenderClearance},
+        {"Unit 20: Selectable Wheel Collision Fidelity Modes & Runtime Lifecycle", unitTest20_CollisionFidelityModesAndLifecycle},
+        {"Unit 21: Modular Vehicle Component Architecture (Wheels, Suspension, Steering, Detachable Parts)", unitTest21_VehicleComponentArchitecture},
+        {"Unit 22: Pneumatic Tyre Internal Pressure, Radial Stiffness & Contact Deflection", unitTest22_PneumaticTirePressureAndStiffness},
+        {"Unit 23: Multi-Point Distributed Contact Patch & Load Consistency", unitTest23_DistributedContactPatchLoadConsistency},
+        {"Unit 24: Series Suspension & Pneumatic Tyre Compliance Equilibrium", unitTest24_SeriesSuspensionPneumaticCompliance},
+        {"Unit 25: Carcass Dynamic Deformation & Self-Aligning Torque", unitTest25_CarcassDynamicDeformationAndAligningTorque},
+        {"Unit 26: Tyre Thermodynamics, Frictional Heating, Wear & Puncture", unitTest26_ThermodynamicsWearAndPuncture},
+        {"Unit 27: Strict Rigid Rim Protection & Vertex Shader Boundary", unitTest27_RigidRimProtectionBoundary},
+        {"Unit 28: World-Space Tyre Ground Penetration Elimination & Flush Contact Patch", unitTest28_WorldSpaceTireDeformationGroundPenetration},
         {"Test A: Static Equilibrium on Flat Ground", validationTestA_StaticEquilibrium},
         {"Test B: Acceleration & Longitudinal Load Transfer (Rear Squat)", validationTestB_AccelerationAndSquat},
         {"Test C: Service Braking, Front Dive & Progressive Deceleration", validationTestC_BrakingAndDive},

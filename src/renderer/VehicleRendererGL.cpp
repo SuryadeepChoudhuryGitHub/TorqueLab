@@ -175,9 +175,10 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
 
     // Procedural Left & Right Wheel Templates
     MaterialProps tireMat{};
-    tireMat.baseColor = Color3::fromHex(0x1a1d24);
-    tireMat.roughness = 0.85f;
-    tireMat.metalness = 0.08f;
+    tireMat.name = "PneumaticTireRubber";
+    tireMat.baseColor = Color3::fromHex(0x1c1f24); // Realistic carbon-black vulcanized rubber
+    tireMat.roughness = 0.82f;                    // Non-glossy micro-textured rubber
+    tireMat.metalness = 0.0f;                     // Strictly dielectric
 
     MaterialProps alloyMat{};
     alloyMat.baseColor = Color3::fromHex(0xd8dee9);
@@ -200,17 +201,19 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
     m_caliperMesh = Mesh::createBox(0.065f, 0.14f, 0.09f);
 
     auto buildWheelSide = [&](std::vector<WheelSubPart>& outParts, bool isLeft) {
+        const float rimRadius = m_wheelRadius * 0.66f;
         outParts.push_back(WheelSubPart{
-            Mesh::createCylinderX(m_wheelRadius, m_wheelRadius, m_wheelWidth, 28),
+            Mesh::createPneumaticTireMesh(m_wheelRadius, rimRadius, m_wheelWidth, 64, 6, 8),
             Mat4::identity(),
-            tireMat
+            tireMat,
+            true // isTire
         });
 
-        const float rimRadius = m_wheelRadius * 0.66f;
         outParts.push_back(WheelSubPart{
             Mesh::createCylinderX(rimRadius, rimRadius, m_wheelWidth * 1.01f, 20),
             Mat4::identity(),
-            alloyMat
+            alloyMat,
+            false // isTire
         });
 
         const double outboardX = isLeft ? (m_wheelWidth * 0.48) : (-m_wheelWidth * 0.48);
@@ -226,7 +229,8 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
             outParts.push_back(WheelSubPart{
                 Mesh::createBox(0.03f, rimRadius * 0.92f, 0.042f),
                 Mat4::fromTRS(spokePos, spokeRot),
-                (s == 0) ? stripeMat : alloyMat
+                (s == 0) ? stripeMat : alloyMat,
+                false // isTire
             });
         }
 
@@ -235,7 +239,8 @@ void VehicleRendererGL::init(const VehicleConfig& config) {
         outParts.push_back(WheelSubPart{
             Mesh::createCylinderX(rotorRadius, rotorRadius, 0.026f, 20),
             Mat4::fromTRS(Vec3{rotorX, 0.0, 0.0}, quatIdentity()),
-            rotorMat
+            rotorMat,
+            false // isTire
         });
     };
 
@@ -324,10 +329,73 @@ void VehicleRendererGL::syncWithVehicle(const VehicleDynamics& vehicle, double a
                 outMats[k] = Mat4::multiply(wheelBaseWorld, parts[k].subPartLocalMatrix);
             }
         }
+
+        // 3. Physical Pneumatic Tyre Deformation State
+        WheelDeformState& def = m_wheelDeformStates[static_cast<size_t>(i)];
+        const auto& tState = ws.tireModel.getState();
+        const auto& tProps = ws.tireModel.getProperties();
+
+        def.radialDeform = static_cast<float>(tState.radialDeformation);
+        def.lateralDeform = static_cast<float>(tState.lateralDeformation);
+        def.longDeform = static_cast<float>(tState.longitudinalDeformation);
+        def.sidewallBulge = static_cast<float>(tState.sidewallBulge);
+        def.outerRadius = static_cast<float>(ws.wheelRadius);
+        def.rimRadius = static_cast<float>(tProps.rimRadius);
+        def.sectionWidth = static_cast<float>(ws.wheelWidth);
+        const double patchHalfLen = 0.5 * std::max(0.04, tState.contactPatchLength);
+        def.patchAngleSpan = static_cast<float>(clamp(patchHalfLen / std::max(0.1, ws.wheelRadius), 0.22, 0.95));
+
+        // Ground direction in wheel local coordinate space:
+        const Quat spinQuat = quatFromAxisAngle(Vec3{1.0, 0.0, 0.0}, ws.rotationAngle);
+        const Quat wheelWorldQuat = quatMultiply(knuckleQuat, spinQuat);
+        const Quat invWheelQuat = quatConjugate(wheelWorldQuat);
+        const Vec3 groundWorld = vec3Scale(quatRotateVec3(interp.chassisRotation, Vec3{0, 1, 0}), -1.0);
+        def.contactDirLocal = vec3Normalize(quatRotateVec3(invWheelQuat, groundWorld));
+        def.axleLocal = Vec3{1.0, 0.0, 0.0};
+
+        // Complete World Space geometric binding for exact ground flattening & soft deformation:
+        def.wheelCenterWorld = wPos;
+        def.wheelAxleWorld = quatRotateVec3(knuckleQuat, Vec3{1.0, 0.0, 0.0});
+        def.inContact = ws.inContact;
+        if (ws.inContact) {
+            def.groundPointWorld = ws.contactPointWorld;
+            def.groundNormalWorld = ws.contactNormalWorld;
+        } else {
+            const VehicleBasis basis = getVehicleBasis(interp.chassisRotation);
+            def.groundPointWorld = vec3Add(wPos, vec3Scale(basis.down, ws.wheelRadius));
+            def.groundNormalWorld = basis.up;
+        }
     }
 }
 
+namespace {
+void applyTireDeformUniforms(Shader& shader, const VehicleRendererGL::WheelDeformState& def, bool isTirePart) {
+    if (!isTirePart) {
+        shader.setInt("uTireDeformEnabled", 0);
+        return;
+    }
+    shader.setInt("uTireDeformEnabled", 1);
+    shader.setInt("uWheelInContact", def.inContact ? 1 : 0);
+    shader.setVec3("uWheelCenterWorld", def.wheelCenterWorld);
+    shader.setVec3("uWheelAxleWorld", def.wheelAxleWorld);
+    shader.setVec3("uGroundPointWorld", def.groundPointWorld);
+    shader.setVec3("uGroundNormalWorld", def.groundNormalWorld);
+    shader.setVec3("uTireContactDirLocal", def.contactDirLocal);
+    shader.setVec3("uTireAxleLocal", def.axleLocal);
+    shader.setFloat("uTireOuterRadius", def.outerRadius);
+    shader.setFloat("uTireRimRadius", def.rimRadius);
+    shader.setFloat("uTireWidth", def.sectionWidth);
+    shader.setFloat("uRadialDeformation", def.radialDeform);
+    shader.setFloat("uLateralDeformation", def.lateralDeform);
+    shader.setFloat("uLongitudinalDeformation", def.longDeform);
+    shader.setFloat("uSidewallBulge", def.sidewallBulge);
+    shader.setFloat("uPatchAngleSpan", def.patchAngleSpan);
+}
+} // namespace
+
 void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
+    depthShader.setInt("uTireDeformEnabled", 0);
+
     if (m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully) {
         // Shadow pass for imported Blender model
         for (const auto& part : m_activeModel->chassisParts) {
@@ -341,10 +409,12 @@ void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
             const auto& mats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
             for (size_t k = 0; k < parts.size(); ++k) {
                 if (!parts[k].material.castShadows) continue;
+                applyTireDeformUniforms(depthShader, m_wheelDeformStates[static_cast<size_t>(i)], parts[k].isTire);
                 depthShader.setMat4("uModel", mats[k]);
                 parts[k].mesh.draw();
             }
         }
+        depthShader.setInt("uTireDeformEnabled", 0);
     } else {
         // Shadow pass for procedural coupe
         for (const auto& part : m_chassisParts) {
@@ -356,14 +426,18 @@ void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
         for (int i = 0; i < 4; ++i) {
             const auto& wheelParts = (i == 0 || i == 2) ? m_wheelPartsLeft : m_wheelPartsRight;
             for (const auto& wp : wheelParts) {
+                applyTireDeformUniforms(depthShader, m_wheelDeformStates[static_cast<size_t>(i)], wp.isTire);
                 depthShader.setMat4("uModel", Mat4::multiply(m_wheelWorldMatrices[static_cast<size_t>(i)], wp.localMatrix));
                 wp.mesh.draw();
             }
         }
+        depthShader.setInt("uTireDeformEnabled", 0);
     }
 }
 
 void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
+    mainShader.setInt("uTireDeformEnabled", 0);
+
     if (m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully) {
         // ---------------------------------------------------------------------
         // IMPORTED BLENDER VEHICLE MODEL (BMW M4 Coupe / Dodge Challenger)
@@ -393,10 +467,13 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
             const auto& mats = m_importedWheelPartMatrices[static_cast<size_t>(i)];
 
             for (size_t k = 0; k < parts.size(); ++k) {
+                applyTireDeformUniforms(mainShader, m_wheelDeformStates[static_cast<size_t>(i)], parts[k].isTire);
                 mainShader.applyMaterial(parts[k].material);
                 mainShader.setMat4("uModel", mats[k]);
                 parts[k].mesh.draw();
             }
+
+            mainShader.setInt("uTireDeformEnabled", 0);
 
             // Visible yellow coilover suspension struts connecting to chassis mounts
             mainShader.applyMaterial(m_strutMat);
@@ -458,10 +535,13 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
         for (int i = 0; i < 4; ++i) {
             const auto& wheelParts = (i == 0 || i == 2) ? m_wheelPartsLeft : m_wheelPartsRight;
             for (const auto& wp : wheelParts) {
+                applyTireDeformUniforms(mainShader, m_wheelDeformStates[static_cast<size_t>(i)], wp.isTire);
                 mainShader.applyMaterial(wp.material);
                 mainShader.setMat4("uModel", Mat4::multiply(m_wheelWorldMatrices[static_cast<size_t>(i)], wp.localMatrix));
                 wp.mesh.draw();
             }
+
+            mainShader.setInt("uTireDeformEnabled", 0);
 
             mainShader.applyMaterial(m_caliperMat);
             mainShader.setMat4("uModel", m_knuckleWorldMatrices[static_cast<size_t>(i)]);

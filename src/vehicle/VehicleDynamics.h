@@ -129,6 +129,16 @@ public:
     /** Returns a complete snapshot of vehicle telemetry for HUD, graphs, and automated tests. */
     VehicleTelemetrySnapshot getTelemetrySnapshot() const;
 
+    /** Sets runtime wheel collision fidelity mode (Performance, Balanced, Detailed) */
+    void setCollisionFidelity(WheelCollisionFidelity fidelity);
+
+    /** Sets internal tyre inflation pressure for a wheel (in kPa) */
+    void setTirePressureKpa(int wheelIndex, double pressureKpa);
+    double getTirePressureKpa(int wheelIndex) const;
+
+    /** Triggers or repairs a tyre puncture */
+    void setTirePunctured(int wheelIndex, bool punctured, double leakRatePaPerSec = 4500.0);
+
     /** Access to the 4 physical Bullet collision shapes and objects representing the wheels */
     const btCollisionObject* getWheelCollisionObject(int i) const {
         return (i >= 0 && i < 4) ? m_wheelCollisionObjects[static_cast<size_t>(i)].get() : nullptr;

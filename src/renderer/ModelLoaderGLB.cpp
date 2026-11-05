@@ -895,15 +895,31 @@ bool ModelLoaderGLB::loadFromFile(
 
             // Extract wheel assembly vertices within physical wheel cylinder bounds (0.45m of hub)
             RawMeshGeometry wheelGeom;
+            RawMeshGeometry tireGeom;
+            const std::string lowerPartName = toLower(p.name);
+            const std::string lowerPartMat  = toLower(p.material.name);
+            const bool isPureTire = (lowerPartName.find("tire") != std::string::npos ||
+                                     lowerPartName.find("tyre") != std::string::npos ||
+                                     lowerPartMat.find("tire") != std::string::npos ||
+                                     lowerPartMat.find("tyre") != std::string::npos ||
+                                     lowerPartMat.find("rubber") != std::string::npos);
+            p.isTire = isPureTire;
+
             for (const auto& vLocal : p.cpuGeometry.vertices) {
                 const Vec3 vModel = mat4TransformPoint(p.localBindMatrix, vLocal);
                 if (vec3Length(vec3Sub(vModel, pivot)) <= 0.45) {
                     wheelGeom.addVertex(vModel);
+                    if (isPureTire) {
+                        tireGeom.addVertex(vModel);
+                    }
                 }
             }
 
             if (!wheelGeom.empty()) {
                 outModel.wheelMeshes[static_cast<size_t>(wIdx)].appendTransformed(wheelGeom, Mat4::identity());
+            }
+            if (!tireGeom.empty()) {
+                outModel.tireMeshes[static_cast<size_t>(wIdx)].appendTransformed(tireGeom, Mat4::identity());
             }
 
             outModel.wheelParts[static_cast<size_t>(wIdx)].push_back(std::move(p));
@@ -939,9 +955,18 @@ bool ModelLoaderGLB::loadFromFile(
         if (!outModel.wheelMeshes[static_cast<size_t>(i)].empty()) {
             outModel.wheelMeshes[static_cast<size_t>(i)].computeBounds();
             const auto& wBounds = outModel.wheelMeshes[static_cast<size_t>(i)];
-            const Vec3 truePivot = vec3Scale(vec3Add(wBounds.aabbMin, wBounds.aabbMax), 0.5);
-            const double trueRadius = 0.5 * (wBounds.aabbMax.y - wBounds.aabbMin.y);
-            const double trueWidth = std::max(0.12, wBounds.aabbMax.x - wBounds.aabbMin.x);
+            Vec3 truePivot = vec3Scale(vec3Add(wBounds.aabbMin, wBounds.aabbMax), 0.5);
+            double trueRadius = 0.5 * (wBounds.aabbMax.y - wBounds.aabbMin.y);
+            double trueWidth = std::max(0.12, wBounds.aabbMax.x - wBounds.aabbMin.x);
+
+            // If authentic rubber tyre meshes were identified, use pure tyre geometry for exact physical contact dimensions
+            if (!outModel.tireMeshes[static_cast<size_t>(i)].empty()) {
+                outModel.tireMeshes[static_cast<size_t>(i)].computeBounds();
+                const auto& tBounds = outModel.tireMeshes[static_cast<size_t>(i)];
+                trueRadius = 0.5 * (tBounds.aabbMax.y - tBounds.aabbMin.y);
+                trueWidth = std::max(0.12, tBounds.aabbMax.x - tBounds.aabbMin.x);
+                truePivot = vec3Scale(vec3Add(tBounds.aabbMin, tBounds.aabbMax), 0.5);
+            }
 
             outModel.modelWheelCenters[static_cast<size_t>(i)] = truePivot;
             outModel.modelWheelRadii[static_cast<size_t>(i)] = trueRadius;

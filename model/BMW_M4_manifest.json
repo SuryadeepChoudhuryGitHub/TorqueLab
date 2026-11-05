@@ -45,7 +45,7 @@
     "rim": { "roughness": 0.22, "metalness": 0.85, "base_color_hex": "#2a2e36" },
     "rim.001": { "roughness": 0.20, "metalness": 0.70, "base_color_hex": "#d8dee9", "texture": "textures/600px-BMW.svg.png" },
     "rim_screw.001": { "roughness": 0.30, "metalness": 0.90, "base_color_hex": "#64748b" },
-    "tire_rubber": { "roughness": 0.85, "metalness": 0.04, "base_color_hex": "#16191f" },
+    "tire_rubber": { "roughness": 0.82, "metalness": 0.0, "base_color_hex": "#1c1f24" },
     "Interior": { "roughness": 0.80, "metalness": 0.08, "base_color_hex": "#1e2126" },
     "BMWBlack": { "roughness": 0.50, "metalness": 0.0, "base_color_hex": "#000000" },
     "BMWBlue": { "roughness": 0.50, "metalness": 0.0, "base_color_hex": "#0f4dc9" },

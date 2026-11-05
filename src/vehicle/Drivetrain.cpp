@@ -204,6 +204,17 @@ void updateDrivetrain(
             idleAssistTorque;
     }
 
+    // When stationary or coming to a complete stop with zero throttle input from user,
+    // isolate closed-throttle engine braking and idle assist from back-driving wheels.
+    if (std::abs(forwardSpeedMps) < 0.20 && throttle < 0.02) {
+        state.engineTorqueNm = 0.0;
+        state.rpm = clamp(lerp(state.rpm, config.idleRpm, clamp(15.0 * dt, 0.0, 1.0)), config.idleRpm, config.maxRpm);
+        for (int i = 0; i < 4; ++i) {
+            wheels[static_cast<size_t>(i)].driveTorque = 0.0;
+        }
+        return;
+    }
+
     if (state.clutchEngagement <= 0.01 || absRatio < 1e-4) {
         const double omegaDot = state.engineTorqueNm / std::max(0.05, config.engineInertia);
         const double rpmDot = omegaDot * RAD_PER_SEC_TO_RPM;

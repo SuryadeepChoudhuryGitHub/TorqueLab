@@ -129,6 +129,7 @@ add_library(TorqueLabPhysics STATIC
     src/vehicle/VehicleConfig.cpp
     src/vehicle/SuspensionSystem.cpp
     src/vehicle/TireModel.cpp
+    src/vehicle/PneumaticTire.cpp
     src/vehicle/SteeringSystem.cpp
     src/vehicle/Drivetrain.cpp
     src/vehicle/BrakeSystem.cpp

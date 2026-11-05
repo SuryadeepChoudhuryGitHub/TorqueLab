@@ -360,6 +360,121 @@ Mesh Mesh::createCylinderX(float radiusTop, float radiusBottom, float width, int
     return mesh;
 }
 
+Mesh Mesh::createPneumaticTireMesh(
+    float outerRadius,
+    float rimRadius,
+    float width,
+    int radialSegments,
+    int sidewallRings,
+    int treadSegments
+) {
+    std::vector<VertexPNTU> verts;
+    std::vector<unsigned int> indices;
+
+    const float halfW = width * 0.5f;
+    const int nRadial = std::max(16, radialSegments);
+    const int nSide = std::max(3, sidewallRings);
+    const int nTread = std::max(4, treadSegments);
+
+    struct ProfilePoint {
+        float x;
+        float r;
+        float nx;
+        float nr;
+    };
+    std::vector<ProfilePoint> profile;
+
+    // A. Inboard sidewall (from rim bead x = -halfW*0.75, r = rimRadius up to shoulder)
+    for (int s = 0; s <= nSide; ++s) {
+        const float t = static_cast<float>(s) / static_cast<float>(nSide);
+        const float r = rimRadius + t * (outerRadius * 0.95f - rimRadius);
+        const float bulge = std::sin(t * PI_F) * (halfW * 0.28f);
+        const float x = -halfW * (0.75f + t * 0.17f) - bulge;
+        const float nx = -std::cos(t * PI_F * 0.85f);
+        const float nr = std::sin(t * PI_F * 0.85f);
+        const float len = std::hypot(nx, nr);
+        profile.push_back(ProfilePoint{x, r, nx / len, nr / len});
+    }
+
+    // B. Tread crown band (from inboard shoulder to outboard shoulder)
+    for (int c = 1; c < nTread; ++c) {
+        const float t = static_cast<float>(c) / static_cast<float>(nTread);
+        const float uPos = -1.0f + 2.0f * t;
+        const float x = uPos * (halfW * 0.92f);
+        const float crownDrop = 0.004f * (uPos * uPos);
+        const float r = outerRadius - crownDrop;
+        const float nx = -0.15f * uPos;
+        const float nr = 0.988f;
+        const float len = std::hypot(nx, nr);
+        profile.push_back(ProfilePoint{x, r, nx / len, nr / len});
+    }
+
+    // C. Outboard sidewall (from shoulder down to rim bead x = +halfW*0.75, r = rimRadius)
+    for (int s = 0; s <= nSide; ++s) {
+        const float t = static_cast<float>(s) / static_cast<float>(nSide);
+        const float r = (outerRadius * 0.95f) - t * (outerRadius * 0.95f - rimRadius);
+        const float tFromBead = 1.0f - t;
+        const float bulge = std::sin(tFromBead * PI_F) * (halfW * 0.28f);
+        const float x = halfW * (0.92f - t * 0.17f) + bulge;
+        const float nx = std::cos(tFromBead * PI_F * 0.85f);
+        const float nr = std::sin(tFromBead * PI_F * 0.85f);
+        const float len = std::hypot(nx, nr);
+        profile.push_back(ProfilePoint{x, r, nx / len, nr / len});
+    }
+
+    const int nProf = static_cast<int>(profile.size());
+
+    // 2. Revolve profile around local X axis
+    verts.reserve(static_cast<size_t>((nRadial + 1) * nProf));
+    for (int i = 0; i <= nRadial; ++i) {
+        const float u = static_cast<float>(i) / static_cast<float>(nRadial);
+        const float phi = u * 2.0f * PI_F;
+        const float cPhi = std::cos(phi);
+        const float sPhi = std::sin(phi);
+
+        for (int k = 0; k < nProf; ++k) {
+            const auto& pt = profile[static_cast<size_t>(k)];
+            const float px = pt.x;
+            const float py = pt.r * cPhi;
+            const float pz = pt.r * sPhi;
+
+            const float nx = pt.nx;
+            const float ny = pt.nr * cPhi;
+            const float nz = pt.nr * sPhi;
+
+            const float v = static_cast<float>(k) / static_cast<float>(nProf - 1);
+            verts.push_back(VertexPNTU{px, py, pz, nx, ny, nz, 0.0f, 0.0f, 0.0f, 1.0f, u, v});
+        }
+    }
+
+    // 3. Connect quad grid with indices
+    indices.reserve(static_cast<size_t>(nRadial * (nProf - 1) * 6));
+    for (int i = 0; i < nRadial; ++i) {
+        const int ring0 = i * nProf;
+        const int ring1 = (i + 1) * nProf;
+
+        for (int k = 0; k < nProf - 1; ++k) {
+            const unsigned int i00 = static_cast<unsigned int>(ring0 + k);
+            const unsigned int i01 = static_cast<unsigned int>(ring0 + k + 1);
+            const unsigned int i10 = static_cast<unsigned int>(ring1 + k);
+            const unsigned int i11 = static_cast<unsigned int>(ring1 + k + 1);
+
+            indices.push_back(i00);
+            indices.push_back(i10);
+            indices.push_back(i01);
+
+            indices.push_back(i10);
+            indices.push_back(i11);
+            indices.push_back(i01);
+        }
+    }
+
+    computeTangents(verts, indices);
+    Mesh mesh;
+    mesh.upload(verts, indices);
+    return mesh;
+}
+
 Mesh Mesh::createTorusZ(float radius, float tubeRadius, int radialSegments, int tubularSegments) {
     std::vector<VertexPNU> verts;
     std::vector<unsigned int> indices;

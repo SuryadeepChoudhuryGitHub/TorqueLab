@@ -37,6 +37,8 @@ struct DashboardCallbacks {
     std::function<void()> onResetVehicleDefaults;
     std::function<void(bool)> onToggleCollisionWireframe;
     std::function<void(CollisionAlgorithmStrategy)> onRegenerateCollision;
+    std::function<void(WheelCollisionFidelity)> onSelectCollisionFidelity;
+    std::function<void(bool)> onToggleStationaryHold;
 };
 
 class ImGuiDashboard {

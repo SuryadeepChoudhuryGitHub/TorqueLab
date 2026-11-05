@@ -6,6 +6,7 @@
 #include <string>
 #include "physics/Math3D.h"
 #include "physics/SurfaceSystem.h"
+#include "vehicle/PneumaticTire.h"
 
 namespace torquelab {
 
@@ -69,6 +70,9 @@ struct WheelState {
     double driveTorque{0.0};                // Drivetrain torque applied to wheel hub (N*m)
     double brakeTorque{0.0};                // Total braking torque magnitude available this step (N*m)
     double rollingResistanceTorque{0.0};    // Rolling resistance torque magnitude (N*m)
+
+    // --- Deformable Pneumatic Tyre Subsystem ---
+    PneumaticTireModel tireModel{};
 };
 
 inline WheelState createInitialWheelState(
@@ -76,7 +80,9 @@ inline WheelState createInitialWheelState(
     const Vec3& mountLocal,
     double restLength,
     double wheelRadius,
-    double wheelWidth = 0.24
+    double wheelWidth = 0.24,
+    double rimRadius = 0.22,
+    double nominalPressureKpa = 220.0
 ) {
     static const char* const ids[4] = {"FL", "FR", "RL", "RR"};
     const bool isFront = (index == 0 || index == 1);
@@ -98,6 +104,9 @@ inline WheelState createInitialWheelState(
     w.surface = getSurfaceProperties(SurfaceType::DryAsphalt);
     w.suspensionLength = restLength;
     w.prevSuspensionLength = restLength;
+
+    PneumaticTireProperties props = createDefaultTireProperties(wheelRadius, wheelWidth, rimRadius, nominalPressureKpa);
+    w.tireModel = PneumaticTireModel(props);
     return w;
 }
 

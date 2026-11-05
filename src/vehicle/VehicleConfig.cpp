@@ -60,9 +60,14 @@ VehicleConfig createProceduralCoupeConfig() {
     cfg.collisionShapeType = CollisionShapeType::Box;
     cfg.mass = 1500.0;
     cfg.wheelbase = 2.70;
-    cfg.trackWidth = 1.60;
+    // Accurate model-matched track widths: tucks flush inside fenders (chassis half-width 0.88m)
+    cfg.trackWidth = 1.36;
+    cfg.frontTrackWidth = 1.34;
+    cfg.rearTrackWidth = 1.38;
     cfg.chassisHalfExtents = Vec3{0.88, 0.36, 2.18};
     cfg.frontWeightDistribution = 0.52;
+    cfg.suspensionMountHeight = 0.15;
+    cfg.suspensionRestLength = 0.32;
     cfg.wheelRadius = 0.32;
     cfg.wheelWidth = 0.235;
     cfg.wheelInertia = 1.15;
@@ -75,6 +80,12 @@ VehicleConfig createProceduralCoupeConfig() {
     cfg.frontAntiRollStiffness = 16000.0;
     cfg.rearAntiRollStiffness = 12000.0;
     cfg.tireFrictionCoeff = 1.10;
+    cfg.tireNominalPressureKpa = 220.0;
+    cfg.frontTirePressureKpa = 220.0;
+    cfg.rearTirePressureKpa = 220.0;
+    cfg.tireRimRadius = 0.22;
+    cfg.frontTireRimRadius = 0.22;
+    cfg.rearTireRimRadius = 0.22;
     cfg.idleRpm = 850.0;
     cfg.maxRpm = 7000.0;
     cfg.finalDriveRatio = 3.73;
@@ -86,6 +97,8 @@ VehicleConfig createProceduralCoupeConfig() {
     cfg.frontalArea = 2.15;
     cfg.downforceCoefficient = 0.18;
     cfg.rollingResistanceCoeff = 0.014;
+    cfg.wheelCollisionFidelity = WheelCollisionFidelity::Balanced;
+    cfg.enableStationaryHold = true;
     return cfg;
 }
 
@@ -138,6 +151,12 @@ VehicleConfig createBmwM4Config() {
 
     // Tire parameters (UHP Performance Tires)
     cfg.tireFrictionCoeff = 1.15;
+    cfg.tireNominalPressureKpa = 220.0;
+    cfg.frontTirePressureKpa = 220.0;
+    cfg.rearTirePressureKpa = 230.0;
+    cfg.tireRimRadius = 0.235;
+    cfg.frontTireRimRadius = 0.235;
+    cfg.rearTireRimRadius = 0.235;
     cfg.tireLongitudinalStiffness = 13.5;
     cfg.tireLateralStiffness = 12.2;
     cfg.tireLoadSensitivity = 0.11;
@@ -236,6 +255,12 @@ VehicleConfig createDodgeChallengerConfig() {
 
     // Vintage muscle car bias-ply / radial tires (high slip angle, progressive breakaway)
     cfg.tireFrictionCoeff = 1.08;
+    cfg.tireNominalPressureKpa = 210.0;
+    cfg.frontTirePressureKpa = 210.0;
+    cfg.rearTirePressureKpa = 210.0;
+    cfg.tireRimRadius = 0.20;
+    cfg.frontTireRimRadius = 0.20;
+    cfg.rearTireRimRadius = 0.20;
     cfg.tireLongitudinalStiffness = 11.8;
     cfg.tireLateralStiffness = 10.5;
     cfg.tireLoadSensitivity = 0.12;
@@ -341,7 +366,9 @@ bool saveVehicleConfigToJson(const VehicleConfig& cfg, const std::string& filePa
     out << "  \"handbrake_torque\": " << cfg.handbrakeTorque << ",\n";
     out << "  \"drag_coefficient\": " << cfg.dragCoefficient << ",\n";
     out << "  \"frontal_area\": " << cfg.frontalArea << ",\n";
-    out << "  \"downforce_coefficient\": " << cfg.downforceCoefficient << "\n";
+    out << "  \"downforce_coefficient\": " << cfg.downforceCoefficient << ",\n";
+    out << "  \"wheel_collision_fidelity\": " << static_cast<int>(cfg.wheelCollisionFidelity) << ",\n";
+    out << "  \"enable_stationary_hold\": " << (cfg.enableStationaryHold ? "true" : "false") << "\n";
     out << "}\n";
 
     return true;
@@ -403,6 +430,13 @@ bool loadVehicleConfigFromJson(VehicleConfig& outCfg, const std::string& filePat
         if (trimmed.find("\"drag_coefficient\"") != std::string::npos) outCfg.dragCoefficient = extractDouble(trimmed, "drag_coefficient", outCfg.dragCoefficient);
         if (trimmed.find("\"frontal_area\"") != std::string::npos) outCfg.frontalArea = extractDouble(trimmed, "frontal_area", outCfg.frontalArea);
         if (trimmed.find("\"downforce_coefficient\"") != std::string::npos) outCfg.downforceCoefficient = extractDouble(trimmed, "downforce_coefficient", outCfg.downforceCoefficient);
+        if (trimmed.find("\"wheel_collision_fidelity\"") != std::string::npos) {
+            const int fVal = static_cast<int>(extractDouble(trimmed, "wheel_collision_fidelity", 1.0));
+            outCfg.wheelCollisionFidelity = static_cast<WheelCollisionFidelity>(std::clamp(fVal, 0, 2));
+        }
+        if (trimmed.find("\"enable_stationary_hold\"") != std::string::npos) {
+            outCfg.enableStationaryHold = (trimmed.find("true") != std::string::npos);
+        }
     }
     return true;
 }

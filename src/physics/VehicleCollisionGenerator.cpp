@@ -688,10 +688,19 @@ bool VehicleCollisionGenerator::generateFromModel(
         outCollision.derivedFrontWheelWidth = std::clamp(frontWidth, 0.12, 0.45);
         outCollision.derivedRearWheelWidth  = std::clamp(rearWidth, 0.12, 0.45);
 
+        // Derive model-accurate upper suspension mount height from authentic design ride height:
+        // Mount Y = WheelHub Y + L_equilibrium, ensuring the physical wheel rests exactly at the 3D model hub position at equilibrium
+        constexpr double nominalMass = 1600.0;
+        constexpr double nominalSpringK = 36000.0;
+        constexpr double suspensionRestLen = 0.38;
+        const double staticEquilibriumCompression = (0.25 * nominalMass * GRAVITY) / nominalSpringK; // ~0.109m
+        const double equilibriumSuspensionLen = suspensionRestLen - staticEquilibriumCompression; // ~0.271m
+
         for (int i = 0; i < 4; ++i) {
+            const double mountY = outCollision.derivedWheelCenters[i].y + equilibriumSuspensionLen;
             outCollision.derivedWheelMountsLocal[static_cast<size_t>(i)] = Vec3{
                 outCollision.derivedWheelCenters[i].x,
-                0.10, // Upper suspension mount height in chassis frame
+                mountY,
                 outCollision.derivedWheelCenters[i].z
             };
         }
@@ -793,7 +802,7 @@ bool VehicleCollisionGenerator::saveToCache(const GeneratedVehicleCollision& col
     }
 
     file << "{\n";
-    file << "  \"cache_version\": 6,\n";
+    file << "  \"cache_version\": 7,\n";
     file << "  \"vehicle_id\": \"" << col.vehicleId << "\",\n";
     file << "  \"source_model_path\": \"" << safePath << "\",\n";
     file << "  \"strategy_used\": " << static_cast<int>(col.strategyUsed) << ",\n";
@@ -972,8 +981,8 @@ bool VehicleCollisionGenerator::loadFromCache(GeneratedVehicleCollision& col, co
         col.totalOutputVertices += static_cast<int>(p.vertices.size());
     }
 
-    if (cacheVersion < 6) {
-        return false; // Automatically invalidate older cache schemas (e.g. schemas with frozen wheel hulls)
+    if (cacheVersion < 7) {
+        return false; // Automatically invalidate older cache schemas (e.g. schemas without model-accurate mount heights)
     }
 
     return !col.pieces.empty();

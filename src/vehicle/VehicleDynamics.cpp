@@ -247,7 +247,8 @@ VolumetricContactOutput evaluateVolumetricWheelContact(
     double suspensionMaxLength,
     double suspensionRestLength,
     const btCollisionObject* ignoreBody,
-    const std::array<const btCollisionObject*, 4>& wheelObjsToIgnore
+    const std::array<const btCollisionObject*, 4>& wheelObjsToIgnore,
+    WheelCollisionFidelity fidelity = WheelCollisionFidelity::Balanced
 ) {
     VolumetricContactOutput best{};
     best.effectiveSuspensionLength = suspensionMaxLength;
@@ -257,25 +258,36 @@ VolumetricContactOutput evaluateVolumetricWheelContact(
     const Quat steeredRot = quatMultiply(chassisRot, steerQuat);
     const VehicleBasis steeredBasis = getVehicleBasis(steeredRot);
 
-    // Tread width slices: inner shoulder (-40%), center (0%), outer shoulder (+40%)
-    constexpr double lateralFractions[3] = {-0.40, 0.0, +0.40};
+    // Configure probe angles and lateral slices according to selected WheelCollisionFidelity
+    std::vector<double> lateralFractions;
+    std::vector<double> probeAngles;
 
-    // Circumference angles theta (rad):
-    // 0 = bottom contact patch
-    // > 0 = forward approach arc (hits curbs, blocks, ramps, steps before axle reaches them)
-    // < 0 = rear departure arc (supports wheel when descending from platform/curb)
-    constexpr int numAngles = 9;
-    constexpr double probeAngles[numAngles] = {
-        0.0,            // 0 deg: bottom patch
-        degToRad(15.0), // 15 deg
-        degToRad(30.0), // 30 deg
-        degToRad(45.0), // 45 deg (standard 10-15cm curb corner)
-        degToRad(60.0), // 60 deg (tall obstacle)
-        degToRad(75.0), // 75 deg (near-horizontal obstacle encounter)
-        degToRad(-15.0), // -15 deg
-        degToRad(-30.0), // -30 deg
-        degToRad(-45.0)  // -45 deg
-    };
+    if (fidelity == WheelCollisionFidelity::Performance) {
+        lateralFractions = {0.0};
+        probeAngles = {0.0, degToRad(20.0), degToRad(45.0), degToRad(-15.0), degToRad(-30.0)};
+    } else if (fidelity == WheelCollisionFidelity::Detailed) {
+        lateralFractions = {-0.45, -0.22, 0.0, +0.22, +0.45};
+        probeAngles = {
+            0.0,
+            degToRad(10.0), degToRad(20.0), degToRad(30.0), degToRad(40.0),
+            degToRad(50.0), degToRad(60.0), degToRad(70.0), degToRad(80.0),
+            degToRad(-10.0), degToRad(-20.0), degToRad(-30.0), degToRad(-40.0),
+            degToRad(-50.0), degToRad(-60.0), degToRad(-70.0), degToRad(-80.0)
+        };
+    } else { // Balanced (default)
+        lateralFractions = {-0.35, 0.0, +0.35};
+        probeAngles = {
+            0.0,
+            degToRad(15.0),
+            degToRad(30.0),
+            degToRad(45.0),
+            degToRad(60.0),
+            degToRad(75.0),
+            degToRad(-15.0),
+            degToRad(-30.0),
+            degToRad(-45.0)
+        };
+    }
 
     const double rayStartOffset = 0.20; // 20cm headroom above mount
     const double maxRayLength = rayStartOffset + suspensionMaxLength + 0.15;
@@ -284,12 +296,12 @@ VolumetricContactOutput evaluateVolumetricWheelContact(
     double minCandidateLength = 1e9;
     bool foundContact = false;
 
-    for (int a = 0; a < numAngles; ++a) {
+    for (size_t a = 0; a < probeAngles.size(); ++a) {
         const double theta = probeAngles[a];
         const double sinT = std::sin(theta);
         const double cosT = std::cos(theta);
 
-        for (int l = 0; l < 3; ++l) {
+        for (size_t l = 0; l < lateralFractions.size(); ++l) {
             const double wOffset = lateralFractions[l] * wheelWidth;
 
             // Offset on the 3D tyre outer circumference relative to the wheel hub center:
@@ -406,13 +418,17 @@ VehicleDynamics::VehicleDynamics(
         const double eqLen = (i < 2) ? frontEqLen : rearEqLen;
         const double r = getWheelRadius(config, i);
         const double wWidth = getWheelWidth(config, i);
+        const double rimR = getTireRimRadius(config, i);
+        const double pKpa = torquelab::getTirePressureKpa(config, i);
 
         wheels[static_cast<size_t>(i)] = createInitialWheelState(
             i,
             mounts[static_cast<size_t>(i)],
             eqLen,
             r,
-            wWidth
+            wWidth,
+            rimR,
+            pKpa
         );
         wheels[static_cast<size_t>(i)].mountPointWorld = localPointToWorld(
             mounts[static_cast<size_t>(i)],
@@ -576,7 +592,8 @@ void VehicleDynamics::step(double dt) {
             config.suspensionMaxLength,
             config.suspensionRestLength,
             body.getRigidBody(),
-            wheelObjsToIgnore
+            wheelObjsToIgnore,
+            config.wheelCollisionFidelity
         );
 
         if (volContact.inContact) {
@@ -604,8 +621,18 @@ void VehicleDynamics::step(double dt) {
             }
 
             const double rawLength = volContact.effectiveSuspensionLength + roughnessOffset;
+
+            // Series Compliance: Suspension spring and pneumatic tyre carcass act in series
+            // 1/k_eff = 1/k_susp + 1/k_tire
+            const double totalCompression = std::max(0.0, config.suspensionRestLength - rawLength);
+            const double kSusp = w.isFront ? config.frontSpringStiffness : config.rearSpringStiffness;
+            const double kTire = w.tireModel.getState().radialStiffness;
+            const double tireComplianceFraction = kSusp / (kSusp + kTire);
+            const double targetTireDeflection = totalCompression * tireComplianceFraction;
+
+            const double effectiveSuspLen = rawLength + targetTireDeflection;
             const double clampedLen = clamp(
-                rawLength,
+                effectiveSuspLen,
                 config.suspensionMinLength * 0.85,
                 config.suspensionRestLength
             );
@@ -621,7 +648,7 @@ void VehicleDynamics::step(double dt) {
             w.suspensionVelocity = lengthVel;
 
             const SuspensionForceOutput suspOut = evaluateWheelSuspension(
-                rawLength,
+                effectiveSuspLen,
                 lengthVel,
                 w.isFront,
                 config
@@ -656,6 +683,25 @@ void VehicleDynamics::step(double dt) {
             w.contactNormalWorld = basis.up;
             w.obstacleResistanceForceWorld = Vec3{0.0, 0.0, 0.0};
             w.tractionClimbingForceWorld = Vec3{0.0, 0.0, 0.0};
+
+            const Quat steerQuat = quatFromAxisAngle(basis.up, w.steeringAngle);
+            const Quat steeredRot = quatMultiply(chassisRot, steerQuat);
+            const VehicleBasis steeredBasis = getVehicleBasis(steeredRot);
+            w.tireModel.evaluateDistributedContact(
+                dt,
+                0.0,
+                0.0,
+                w.angularVelocity,
+                w.wheelCenterWorld,
+                w.worldOrientation,
+                steeredBasis,
+                basis.down,
+                w.surface,
+                config.wheelCollisionFidelity,
+                {},
+                0.0,
+                0.0
+            );
         }
     }
 
@@ -796,6 +842,25 @@ void VehicleDynamics::step(double dt) {
             w.normalLoad = 0.0;
             w.obstacleResistanceForceWorld = Vec3{0.0, 0.0, 0.0};
             w.tractionClimbingForceWorld = Vec3{0.0, 0.0, 0.0};
+
+            const Quat steerQuat = quatFromAxisAngle(basis.up, w.steeringAngle);
+            const Quat steeredRot = quatMultiply(chassisRot, steerQuat);
+            const VehicleBasis steeredBasis = getVehicleBasis(steeredRot);
+            w.tireModel.evaluateDistributedContact(
+                dt,
+                0.0,
+                0.0,
+                w.angularVelocity,
+                w.wheelCenterWorld,
+                w.worldOrientation,
+                steeredBasis,
+                basis.down,
+                w.surface,
+                config.wheelCollisionFidelity,
+                {},
+                0.0,
+                0.0
+            );
         }
     }
 
@@ -917,6 +982,14 @@ void VehicleDynamics::step(double dt) {
         double accumFy = 0.0;
         TireForceOutput lastTireOut{};
 
+        const double patchSpeed = std::hypot(vx, vy);
+        const bool isNearStandstill = (patchSpeed < 0.25 && std::abs(forwardSpeed) < 0.25);
+        const bool isThrottleIdle = (effectiveThrottle < 0.03);
+
+        if (config.enableStationaryHold && isNearStandstill && isThrottleIdle && std::abs(w.driveTorque) < 5.0) {
+            w.angularVelocity = 0.0;
+        }
+
         for (int s = 0; s < wheelSubSteps; ++s) {
             const double slipRatio = computeLongitudinalSlipRatio(
                 w.angularVelocity,
@@ -935,6 +1008,7 @@ void VehicleDynamics::step(double dt) {
             );
             lastTireOut = tireOut;
 
+            const double bearingDrag = -0.12 * w.angularVelocity;
             const double roadReactionTorque = -w.wheelRadius * tireOut.longitudinalForce;
             double subDriveTorque = w.driveTorque;
             if (isWheelDriven && absTotalGearRatio > 0.1 && subDriveTorque * w.angularVelocity > 0.0) {
@@ -948,7 +1022,7 @@ void VehicleDynamics::step(double dt) {
                     subDriveTorque *= clamp(taperFactor, 0.0, 1.0);
                 }
             }
-            const double netActiveTorque = subDriveTorque + roadReactionTorque;
+            const double netActiveTorque = subDriveTorque + roadReactionTorque + bearingDrag;
             const double omegaStar = w.angularVelocity + netActiveTorque * invInertia * subDt;
 
             const double maxBrakeDelta = w.brakeTorque * invInertia * subDt;
@@ -957,27 +1031,47 @@ void VehicleDynamics::step(double dt) {
             } else {
                 w.angularVelocity = omegaStar - std::copysign(maxBrakeDelta, omegaStar);
             }
+            if (config.enableStationaryHold && isNearStandstill && isThrottleIdle && std::abs(w.driveTorque) < 5.0) {
+                w.angularVelocity = 0.0;
+            }
             w.angularVelocity = clamp(w.angularVelocity, -260.0, 260.0);
 
             accumFx += tireOut.longitudinalForce;
             accumFy += tireOut.lateralForce;
         }
 
-        w.rotationAngle += w.angularVelocity * dt;
-        w.worldOrientation = computeWheelWorldOrientation(chassisRot, w);
-
         const double avgFx = accumFx / static_cast<double>(wheelSubSteps);
         const double avgFy = accumFy / static_cast<double>(wheelSubSteps);
 
-        // Low-speed parking hold damping when brakes are applied and vehicle is nearly stopped
-        // (only when throttle is not actively applied, so parking hold never fights launch)
         double finalFx = avgFx;
-        const double finalFy = avgFy;
-        if (std::hypot(vx, vy) < 0.8 && w.brakeTorque > 50.0 && effectiveThrottle < 0.05) {
+        double finalFy = avgFy;
+
+        // Static Coulomb friction (stiction) & zero-creep holding
+        if (config.enableStationaryHold && isNearStandstill && isThrottleIdle) {
+            // Static Coulomb friction opposing any residual micro-drift:
+            // critically damps residual contact patch velocity to zero within ~2 frames
+            const double maxStiction = lastTireOut.maxAvailableGripForce * 0.98;
+            const double stictionFx = clamp(-vx * (config.mass * 8.0), -maxStiction, maxStiction);
+            const double stictionFy = clamp(-vy * (config.mass * 8.0), -maxStiction, maxStiction);
+
+            finalFx = stictionFx;
+            finalFy = stictionFy;
+
+            // Zero-creep rotational deadband: lock wheel rotation when stopped with no drive torque
+            if (patchSpeed < 0.12 && std::abs(w.driveTorque) < 5.0) {
+                w.angularVelocity = 0.0;
+            }
+        } else if (isNearStandstill && w.brakeTorque > 50.0 && isThrottleIdle) {
             const double maxHold = lastTireOut.maxAvailableGripForce * 0.95;
             const double holdFx = clamp(-vx * config.mass * 4.5, -maxHold, maxHold);
             finalFx = clamp(avgFx + holdFx, -maxHold, maxHold);
+        } else if (patchSpeed < 1.0 && isThrottleIdle && std::abs(w.angularVelocity * w.wheelRadius - vx) < 0.25) {
+            // Synchronize rolling angular speed during low-speed rolling to eliminate numerical sub-step chatter
+            w.angularVelocity = vx / w.wheelRadius;
         }
+
+        w.rotationAngle += w.angularVelocity * dt;
+        w.worldOrientation = computeWheelWorldOrientation(chassisRot, w);
 
         w.slipRatio = lastTireOut.slipRatio;
         w.slipAngle = lastTireOut.slipAngle;
@@ -1001,12 +1095,41 @@ void VehicleDynamics::step(double dt) {
         const double rollingResistanceForce = -maxResistiveForce * rrSmoothSign;
         const Vec3 rollForceVec = vec3Scale(tireForward, rollingResistanceForce);
 
+        // Evaluate pneumatic tyre deformation & multi-point contact patch
+        const Quat steeredRot = quatMultiply(chassisRot, steerQuat);
+        const VehicleBasis steeredBasis = getVehicleBasis(steeredRot);
+        w.tireModel.evaluateDistributedContact(
+            dt,
+            w.normalLoad,
+            w.compression,
+            w.angularVelocity,
+            w.wheelCenterWorld,
+            w.worldOrientation,
+            steeredBasis,
+            basis.down,
+            w.surface,
+            config.wheelCollisionFidelity,
+            {},
+            vx,
+            vy
+        );
+
+        if (w.inContact && w.normalLoad > 5.0 && !w.hasObstacleContact) {
+            w.contactPointWorld = w.tireModel.getState().contactCentroidWorld;
+        }
+
         const Vec3 totalHorizontalForce = vec3Add(tireForceVec, rollForceVec);
         const Vec3 forceAppPoint = vec3Add(
             w.contactPointWorld,
             vec3Scale(basis.up, config.tireForceApplicationHeightOffset)
         );
         body.applyForceAtWorldPoint(totalHorizontalForce, forceAppPoint);
+
+        // Apply pneumatic trail self-aligning torque M_z to chassis body
+        const double mz = w.tireModel.getState().selfAligningTorque;
+        if (std::abs(mz) > 0.05) {
+            body.applyTorque(vec3Scale(basis.up, mz));
+        }
     }
 
     // 8. Aerodynamic Drag & Downforce
@@ -1071,12 +1194,19 @@ void VehicleDynamics::resetVehicle(const Vec3* position, const Quat* rotation) {
     const VehicleBasis basis = getVehicleBasis(rot);
     for (int i = 0; i < 4; ++i) {
         const double eqLen = (i < 2) ? frontEqLen : rearEqLen;
+        const double r = getWheelRadius(config, i);
+        const double wWidth = getWheelWidth(config, i);
+        const double rimR = getTireRimRadius(config, i);
+        const double pKpa = torquelab::getTirePressureKpa(config, i);
+
         wheels[static_cast<size_t>(i)] = createInitialWheelState(
             i,
             mounts[static_cast<size_t>(i)],
             eqLen,
-            getWheelRadius(config, i),
-            getWheelWidth(config, i)
+            r,
+            wWidth,
+            rimR,
+            pKpa
         );
         wheels[static_cast<size_t>(i)].mountPointWorld = localPointToWorld(
             mounts[static_cast<size_t>(i)],
@@ -1190,6 +1320,29 @@ Quat VehicleDynamics::computeWheelWorldOrientation(const Quat& chassisRot, const
     const Quat steerQuat = quatFromAxisAngle(Vec3{0.0, 1.0, 0.0}, w.steeringAngle);
     const Quat spinQuat = quatFromAxisAngle(Vec3{1.0, 0.0, 0.0}, w.rotationAngle);
     return quatMultiply(chassisRot, quatMultiply(steerQuat, spinQuat));
+}
+
+void VehicleDynamics::setCollisionFidelity(WheelCollisionFidelity fidelity) {
+    config.wheelCollisionFidelity = fidelity;
+}
+
+void VehicleDynamics::setTirePressureKpa(int wheelIndex, double pressureKpa) {
+    if (wheelIndex >= 0 && wheelIndex < 4) {
+        wheels[static_cast<size_t>(wheelIndex)].tireModel.setTargetPressure(pressureKpa * 1000.0);
+    }
+}
+
+double VehicleDynamics::getTirePressureKpa(int wheelIndex) const {
+    if (wheelIndex >= 0 && wheelIndex < 4) {
+        return wheels[static_cast<size_t>(wheelIndex)].tireModel.getState().pressurePa / 1000.0;
+    }
+    return 220.0;
+}
+
+void VehicleDynamics::setTirePunctured(int wheelIndex, bool punctured, double leakRatePaPerSec) {
+    if (wheelIndex >= 0 && wheelIndex < 4) {
+        wheels[static_cast<size_t>(wheelIndex)].tireModel.setPunctured(punctured, leakRatePaPerSec);
+    }
 }
 
 } // namespace torquelab

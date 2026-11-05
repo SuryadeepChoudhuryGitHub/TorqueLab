@@ -42,6 +42,8 @@
     "blackleather": { "roughness": 0.70, "metalness": 0.05, "base_color_hex": "#1a1d22" },
     "plastic": { "roughness": 0.40, "metalness": 0.08, "base_color_hex": "#15181c" },
     "plastic_black": { "roughness": 0.40, "metalness": 0.08, "base_color_hex": "#15181c" },
-    "paintedsteel": { "roughness": 0.45, "metalness": 0.60, "base_color_hex": "#202428" }
+    "paintedsteel": { "roughness": 0.45, "metalness": 0.60, "base_color_hex": "#202428" },
+    "tire_rubber": { "roughness": 0.82, "metalness": 0.0, "base_color_hex": "#1c1f24" },
+    "tyre": { "roughness": 0.82, "metalness": 0.0, "base_color_hex": "#1c1f24" }
   }
 }

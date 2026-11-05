@@ -283,7 +283,9 @@ void DebugOverlayGL::render(
             const Color3 cageColor = Color3::fromHex(0x22c55e); // Emerald Green for chassis body
             addCompoundWireframe(vehicle.body.getRigidBody(), vehicle.body.getCompoundShape(), cageColor, lines);
         }
+    }
 
+    if (showWheelColliders) {
         // Dedicated physical wheel collision cylinders (Cyan for Front, Amber for Rear)
         for (int i = 0; i < 4; ++i) {
             const WheelState& w = snap.wheels[static_cast<size_t>(i)];
@@ -301,6 +303,53 @@ void DebugOverlayGL::render(
         }
     }
 
+    // Wheel Axles & Steering Pivot Pins
+    if (showWheelAxes) {
+        for (int i = 0; i < 4; ++i) {
+            const WheelState& w = snap.wheels[static_cast<size_t>(i)];
+            const Quat steerQ = quatFromAxisAngle(snap.upDirWorld, w.steeringAngle);
+            const Vec3 axleDir = quatRotateVec3(steerQ, snap.lateralDirWorld);
+            // Draw axle pin through wheel center
+            const Vec3 p0 = vec3Add(w.wheelCenterWorld, vec3Scale(axleDir, -w.wheelWidth * 0.65));
+            const Vec3 p1 = vec3Add(w.wheelCenterWorld, vec3Scale(axleDir, +w.wheelWidth * 0.65));
+            addLine(p0, p1, Color3::fromHex(0xe2e8f0), lines); // White/silver axle pin
+
+            // Draw steering kingpin pivot for front wheels
+            if (i < 2) {
+                const Vec3 kpTop = vec3Add(w.wheelCenterWorld, vec3Scale(snap.upDirWorld, +0.22));
+                const Vec3 kpBot = vec3Add(w.wheelCenterWorld, vec3Scale(snap.upDirWorld, -0.22));
+                addLine(kpTop, kpBot, Color3::fromHex(0xa855f7), lines); // Purple steering kingpin
+            }
+        }
+    }
+
+    // Suspension Strut & Travel
+    if (showSuspensionTravel) {
+        for (int i = 0; i < 4; ++i) {
+            const WheelState& w = snap.wheels[static_cast<size_t>(i)];
+            const Vec3 endPt = w.inContact ? w.contactPointWorld : w.wheelCenterWorld;
+            const Color3 strutColor = w.isBottomedOut
+                ? Color3::fromHex(0xef4444) // Red when bottomed out
+                : (w.compressionRatio > 0.6 ? Color3::fromHex(0xf59e0b) : Color3::fromHex(0x10b981)); // Yellow or Green
+            addLine(w.mountPointWorld, endPt, strutColor, lines);
+        }
+    }
+
+    // Alignment & Fender Clearance Diagnostics (Draws clearance indicator from chassis outer edge to wheel)
+    if (showAlignmentDiagnostics) {
+        const double halfChassisWidth = vehicle.config.chassisHalfExtents.x;
+        for (int i = 0; i < 4; ++i) {
+            const WheelState& w = snap.wheels[static_cast<size_t>(i)];
+            const double sideSign = (i % 2 == 0) ? +1.0 : -1.0;
+            const Vec3 bodyEdgeLocal{sideSign * halfChassisWidth, w.mountPointLocal.y, w.mountPointLocal.z};
+            const Vec3 bodyEdgeWorld = localPointToWorld(bodyEdgeLocal, snap.chassisPosition, snap.chassisRotation);
+            const Vec3 wheelOuterEdge = vec3Add(w.wheelCenterWorld, vec3Scale(snap.lateralDirWorld, sideSign * (w.wheelWidth * 0.5)));
+            // Green if tucked inside fender, Red if protruding
+            const bool isTucked = (sideSign * (bodyEdgeWorld.x - wheelOuterEdge.x) >= 0.0);
+            addLine(bodyEdgeWorld, wheelOuterEdge, isTucked ? Color3::fromHex(0x10b981) : Color3::fromHex(0xef4444), lines);
+        }
+    }
+
     // 1. Chassis Basis, Velocity, and Acceleration Arrows
     addArrow(comOrigin, snap.forwardDirWorld, 2.2, Color3::fromHex(0x38bdf8), lines);
     addArrow(comOrigin, snap.lateralDirWorld, 1.6, Color3::fromHex(0xa855f7), lines);
@@ -315,66 +364,129 @@ void DebugOverlayGL::render(
     }
 
     // 2. Per-Wheel Raycast Lines, Normal Load Arrows, Tire Force Arrows, and Friction Circles
-    for (int i = 0; i < 4; ++i) {
-        const WheelState& w = snap.wheels[static_cast<size_t>(i)];
-        const Vec3 endPt = w.inContact ? w.contactPointWorld : w.wheelCenterWorld;
-        addLine(w.mountPointWorld, endPt, Color3::fromHex(0xfef08a), lines);
+    if (showContactForces) {
+        for (int i = 0; i < 4; ++i) {
+            const WheelState& w = snap.wheels[static_cast<size_t>(i)];
+            const Vec3 endPt = w.inContact ? w.contactPointWorld : w.wheelCenterWorld;
+            addLine(w.mountPointWorld, endPt, Color3::fromHex(0xfef08a), lines);
 
-        if (w.inContact && w.normalLoad > 10.0) {
-            // Normal load arrow Fz
-            addArrow(
-                w.contactPointWorld,
-                w.contactNormalWorld,
-                std::max(0.15, w.normalLoad * m_forceScale),
-                Color3::fromHex(0x38bdf8),
-                lines
-            );
-
-            // Friction circle ring on road plane
-            const double maxGripRadius = std::max(0.05, w.maxAvailableGripForce * m_forceScale);
-            const Color3 ringColor = w.isSkidding
-                ? Color3::fromHex(0xef4444)
-                : (w.gripUsageRatio > 0.7 ? Color3::fromHex(0xfacc15) : Color3::fromHex(0x10b981));
-            addCircleXZ(
-                Vec3{w.contactPointWorld.x, w.contactPointWorld.y + 0.025, w.contactPointWorld.z},
-                maxGripRadius,
-                ringColor,
-                lines
-            );
-
-            // Horizontal tire force vector arrow
-            const double fxyMag = vec3Length(w.tireForceWorld);
-            if (fxyMag > 25.0) {
+            if (w.inContact && w.normalLoad > 10.0) {
+                // Normal load arrow Fz
                 addArrow(
-                    Vec3{w.contactPointWorld.x, w.contactPointWorld.y + 0.03, w.contactPointWorld.z},
-                    w.tireForceWorld,
-                    std::max(0.12, fxyMag * m_forceScale),
-                    Color3::fromHex(0xef4444),
+                    w.contactPointWorld,
+                    w.contactNormalWorld,
+                    std::max(0.15, w.normalLoad * m_forceScale),
+                    Color3::fromHex(0x38bdf8),
                     lines
                 );
-            }
 
-            // Obstacle contact horizontal resistance and climbing traction forces
-            if (w.hasObstacleContact) {
-                const double obsResMag = vec3Length(w.obstacleResistanceForceWorld);
-                if (obsResMag > 20.0) {
+                // Friction circle ring on road plane
+                const double maxGripRadius = std::max(0.05, w.maxAvailableGripForce * m_forceScale);
+                const Color3 ringColor = w.isSkidding
+                    ? Color3::fromHex(0xef4444)
+                    : (w.gripUsageRatio > 0.7 ? Color3::fromHex(0xfacc15) : Color3::fromHex(0x10b981));
+                addCircleXZ(
+                    Vec3{w.contactPointWorld.x, w.contactPointWorld.y + 0.025, w.contactPointWorld.z},
+                    maxGripRadius,
+                    ringColor,
+                    lines
+                );
+
+                // Horizontal tire force vector arrow
+                const double fxyMag = vec3Length(w.tireForceWorld);
+                if (fxyMag > 25.0) {
                     addArrow(
-                        w.contactPointWorld,
-                        w.obstacleResistanceForceWorld,
-                        std::max(0.15, obsResMag * m_forceScale),
-                        Color3::fromHex(0xf97316), // Orange
+                        Vec3{w.contactPointWorld.x, w.contactPointWorld.y + 0.03, w.contactPointWorld.z},
+                        w.tireForceWorld,
+                        std::max(0.12, fxyMag * m_forceScale),
+                        Color3::fromHex(0xef4444),
                         lines
                     );
                 }
-                const double climbMag = vec3Length(w.tractionClimbingForceWorld);
-                if (climbMag > 20.0) {
-                    addArrow(
-                        w.contactPointWorld,
-                        w.tractionClimbingForceWorld,
-                        std::max(0.15, climbMag * m_forceScale),
-                        Color3::fromHex(0x10b981), // Emerald
-                        lines
-                    );
+
+                // Obstacle contact horizontal resistance and climbing traction forces
+                if (w.hasObstacleContact) {
+                    const double obsResMag = vec3Length(w.obstacleResistanceForceWorld);
+                    if (obsResMag > 20.0) {
+                        addArrow(
+                            w.contactPointWorld,
+                            w.obstacleResistanceForceWorld,
+                            std::max(0.15, obsResMag * m_forceScale),
+                            Color3::fromHex(0xf97316), // Orange
+                            lines
+                        );
+                    }
+                    const double climbMag = vec3Length(w.tractionClimbingForceWorld);
+                    if (climbMag > 20.0) {
+                        addArrow(
+                            w.contactPointWorld,
+                            w.tractionClimbingForceWorld,
+                            std::max(0.15, climbMag * m_forceScale),
+                            Color3::fromHex(0x10b981), // Emerald
+                            lines
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Deformed Pneumatic Tyre Profile & Multi-Point Contact Patch Samples
+    if (showTireDeformation || showContactPatchSamples) {
+        for (int i = 0; i < 4; ++i) {
+            const WheelState& w = snap.wheels[static_cast<size_t>(i)];
+            const auto& tState = w.tireModel.getState();
+            const Quat steerQ = quatFromAxisAngle(snap.upDirWorld, w.steeringAngle);
+            const Vec3 steeredFwd = quatRotateVec3(steerQ, snap.forwardDirWorld);
+            const Vec3 steeredLeft = quatRotateVec3(steerQ, snap.lateralDirWorld);
+
+            // A. Deformed Tyre Profile: flattened contact footprint and sidewall bulge markers
+            if (showTireDeformation && w.inContact && tState.radialDeformation > 0.001) {
+                const double halfPatchLen = 0.5 * std::max(0.04, tState.contactPatchLength);
+                const double halfPatchWid = 0.5 * std::max(0.08, tState.contactPatchWidth);
+
+                // Flattened contact patch rectangular footprint boundary on the road surface
+                const Vec3 c0 = vec3Add(w.contactPointWorld, vec3Add(vec3Scale(steeredFwd, +halfPatchLen), vec3Scale(steeredLeft, +halfPatchWid)));
+                const Vec3 c1 = vec3Add(w.contactPointWorld, vec3Add(vec3Scale(steeredFwd, +halfPatchLen), vec3Scale(steeredLeft, -halfPatchWid)));
+                const Vec3 c2 = vec3Add(w.contactPointWorld, vec3Add(vec3Scale(steeredFwd, -halfPatchLen), vec3Scale(steeredLeft, -halfPatchWid)));
+                const Vec3 c3 = vec3Add(w.contactPointWorld, vec3Add(vec3Scale(steeredFwd, -halfPatchLen), vec3Scale(steeredLeft, +halfPatchWid)));
+                addLine(c0, c1, Color3::fromHex(0x4ade80), lines); // Bright green footprint box
+                addLine(c1, c2, Color3::fromHex(0x4ade80), lines);
+                addLine(c2, c3, Color3::fromHex(0x4ade80), lines);
+                addLine(c3, c0, Color3::fromHex(0x4ade80), lines);
+
+                // Longitudinal centerline of contact patch
+                const Vec3 patchFwd = vec3Add(w.contactPointWorld, vec3Scale(steeredFwd, +halfPatchLen));
+                const Vec3 patchRear = vec3Add(w.contactPointWorld, vec3Scale(steeredFwd, -halfPatchLen));
+                addLine(patchFwd, patchRear, Color3::fromHex(0x22c55e), lines); // Midline
+
+                // Sidewall bulge indicators (protruding laterally near contact patch)
+                const double bulge = tState.sidewallBulge;
+                const Vec3 leftBulge = vec3Add(w.contactPointWorld, vec3Scale(steeredLeft, +(halfPatchWid + bulge)));
+                const Vec3 rightBulge = vec3Add(w.contactPointWorld, vec3Scale(steeredLeft, -(halfPatchWid + bulge)));
+                addLine(leftBulge, rightBulge, Color3::fromHex(0xfacc15), lines); // Yellow width bulge
+
+                // Radial compression line from undeflected bottom to deformed contact point
+                const Vec3 undeflectedBottom = vec3Add(w.wheelCenterWorld, vec3Scale(snap.upDirWorld, -w.wheelRadius));
+                addLine(undeflectedBottom, w.contactPointWorld, Color3::fromHex(0xef4444), lines); // Red compression delta
+            }
+
+            // B. Multi-Point Distributed Contact Patch Samples
+            if (showContactPatchSamples && !tState.contactSamples.empty()) {
+                const auto& samples = tState.contactSamples;
+                for (const auto& sample : samples) {
+                    const Vec3 sp = sample.contactPointWorld;
+                    const Color3 sColor = sample.inContact
+                        ? Color3::fromHex(0x22c55e) // Green active
+                        : Color3::fromHex(0x64748b); // Muted slate inactive
+                    const double crossSize = 0.02;
+                    addLine(vec3Add(sp, vec3Scale(steeredFwd, -crossSize)), vec3Add(sp, vec3Scale(steeredFwd, +crossSize)), sColor, lines);
+                    addLine(vec3Add(sp, vec3Scale(steeredLeft, -crossSize)), vec3Add(sp, vec3Scale(steeredLeft, +crossSize)), sColor, lines);
+
+                    // Local normal force vector per sample point
+                    if (sample.inContact && sample.normalLoad > 5.0) {
+                        addArrow(sp, sample.contactNormalWorld, sample.normalLoad * m_forceScale * 3.5, Color3::fromHex(0x38bdf8), lines);
+                    }
                 }
             }
         }

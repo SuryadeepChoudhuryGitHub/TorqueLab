@@ -92,6 +92,24 @@ public:
     void setVisualDebugEnabled(bool enable) { m_showVisualDebug = enable; }
     void toggleVisualDebug() { m_showVisualDebug = !m_showVisualDebug; }
 
+    struct WheelDeformState {
+        float radialDeform{0.0f};
+        float lateralDeform{0.0f};
+        float longDeform{0.0f};
+        float sidewallBulge{0.0f};
+        float patchAngleSpan{0.45f};
+        float outerRadius{0.32f};
+        float rimRadius{0.22f};
+        float sectionWidth{0.24f};
+        Vec3 contactDirLocal{0.0, -1.0, 0.0};
+        Vec3 axleLocal{1.0, 0.0, 0.0};
+        Vec3 wheelCenterWorld{0.0, 0.0, 0.0};
+        Vec3 wheelAxleWorld{1.0, 0.0, 0.0};
+        Vec3 groundPointWorld{0.0, 0.0, 0.0};
+        Vec3 groundNormalWorld{0.0, 1.0, 0.0};
+        bool inContact{false};
+    };
+
 private:
     struct ChassisPart {
         Mesh mesh;
@@ -106,6 +124,7 @@ private:
         Mesh mesh;
         Mat4 localMatrix;
         MaterialProps material;
+        bool isTire{false};
     };
 
     // Procedural sports coupe model data
@@ -146,6 +165,7 @@ private:
     std::array<Mat4, 4> m_wheelWorldMatrices;
     std::array<Mat4, 4> m_knuckleWorldMatrices;
     std::array<Mat4, 4> m_strutWorldMatrices;
+    std::array<WheelDeformState, 4> m_wheelDeformStates;
 
     // Calculated transforms for imported model parts
     Mat4 m_importedChassisWorldMatrix;
