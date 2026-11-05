@@ -217,6 +217,7 @@ void ImGuiDashboard::renderTopBar(
             topVehicleList = {
                 {"bmw_m4", "BMW M4 Coupe"},
                 {"dodge_challenger", "Dodge Challenger R/T"},
+                {"hummer", "Hummer H2"},
                 {"procedural_coupe", "Procedural Sports Coupe"}
             };
         }
@@ -309,6 +310,7 @@ void ImGuiDashboard::renderLeftPanels(
                 panelVehicleList = {
                     {"bmw_m4", "BMW M4 Coupe"},
                     {"dodge_challenger", "1970 Dodge Challenger R/T"},
+                    {"hummer", "Hummer H2"},
                     {"procedural_coupe", "Procedural Sports Coupe"}
                 };
             }
@@ -617,6 +619,8 @@ void ImGuiDashboard::renderLeftPanels(
                 vehicle.config = createBmwM4Config();
             } else if (vehicle.config.id == "dodge_challenger") {
                 vehicle.config = createDodgeChallengerConfig();
+            } else if (vehicle.config.id == "hummer") {
+                vehicle.config = createHummerConfig();
             } else {
                 vehicle.config = createProceduralCoupeConfig();
             }

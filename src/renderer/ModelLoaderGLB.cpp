@@ -3,6 +3,7 @@
 
 #include "renderer/ModelLoaderGLB.h"
 #include "renderer/Texture2D.h"
+#include "renderer/VehicleAssetValidator.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -377,11 +378,10 @@ bool ModelLoaderGLB::loadFromFile(
         const std::string nodeName = node->name ? node->name : ("Node_" + std::to_string(n));
         const std::string lowerName = toLower(nodeName);
 
-        // Check ignore filter
+        // Check ignore filter: explicit manifest exclusion, ground objects, or standalone floor planes
         if (manifest.ignoreNodes.find(nodeName) != manifest.ignoreNodes.end() ||
             lowerName.find("ground") != std::string::npos ||
-            lowerName.find("plane.036") != std::string::npos || // Standalone floor plane
-            lowerName == "plane") {
+            lowerName.find("plane.036") != std::string::npos) { // Standalone floor plane in BMW M4
             continue;
         }
 
@@ -395,6 +395,12 @@ bool ModelLoaderGLB::loadFromFile(
         const Vec3 localPos{localBind.m[12], localBind.m[13], localBind.m[14]};
         const Quat localRot = quatIdentity();
         const Vec3 localScale{1.0, 1.0, 1.0};
+
+        // Detect if transform reflects coordinate space (negative 3x3 determinant), which inverts face winding
+        const double det3x3 = localBind.m[0] * (localBind.m[5] * localBind.m[10] - localBind.m[6] * localBind.m[9])
+                            - localBind.m[1] * (localBind.m[4] * localBind.m[10] - localBind.m[6] * localBind.m[8])
+                            + localBind.m[2] * (localBind.m[4] * localBind.m[9] - localBind.m[5] * localBind.m[8]);
+        const bool isInvertedWinding = (det3x3 < -1e-6);
 
         // Process primitives inside mesh
         const cgltf_mesh* mesh = node->mesh;
@@ -492,6 +498,15 @@ bool ModelLoaderGLB::loadFromFile(
             } else {
                 indices.resize(vertexCount);
                 for (size_t i = 0; i < vertexCount; ++i) indices[i] = static_cast<unsigned int>(i);
+            }
+
+            // Inverted winding correction: if the transform mirrors space (det < 0), swap i1 and i2
+            // so OpenGL backface culling does not cull exterior front faces
+            if (isInvertedWinding) {
+                const size_t numTris = indices.size() / 3;
+                for (size_t t = 0; t < numTris; ++t) {
+                    std::swap(indices[t * 3 + 1], indices[t * 3 + 2]);
+                }
             }
 
             // If glTF source had no tangent vectors, compute smooth orthogonal tangents and bitangent signs
@@ -652,6 +667,23 @@ bool ModelLoaderGLB::loadFromFile(
             if (manifest.isBrakeLightMap.count(matName)) isBrakeLight = manifest.isBrakeLightMap[matName];
             if (manifest.isTransparentMap.count(matName)) isTransparent = manifest.isTransparentMap[matName];
 
+            // Bodywork Transparency Leakage Guard:
+            // Exterior vehicle body panels (paint, metal, rubber, plastic, trim) must NEVER
+            // accidentally become transparent due to Blender blend mode quirks.
+            if (isTransparent) {
+                const bool isExplicitlyTransparent = (manifest.isTransparentMap.count(matName) && manifest.isTransparentMap.at(matName));
+                const bool isRecognizedGlass = (lowerMat.find("glass") != std::string::npos ||
+                                                lowerMat.find("windshield") != std::string::npos ||
+                                                lowerMat.find("window") != std::string::npos ||
+                                                lowerMat.find("lens") != std::string::npos);
+                if (!isExplicitlyTransparent && !isRecognizedGlass) {
+                    // Accidental blend mode on opaque component: force opaque
+                    isTransparent = false;
+                    matProps.alphaMode = AlphaMode::Opaque;
+                    matProps.opacity = 1.0f;
+                }
+            }
+
             // Explicit manifest texture overrides (e.g. decal composites)
             if (loadGpuResources && manifest.textureMap.count(matName)) {
                 const std::string texRel = manifest.textureMap.at(matName);
@@ -810,12 +842,14 @@ bool ModelLoaderGLB::loadFromFile(
                 continue;
             }
 
+            const Vec3 primCenter = vec3Scale(vec3Add(primMin, primMax), 0.5);
+
             LoadedModelPart part{};
-            part.name = nodeName;
+            part.name = (mesh->primitives_count > 1) ? (nodeName + "_" + matName) : nodeName;
             part.mesh = std::move(glMesh);
             part.cpuGeometry = std::move(cpuGeom);
             part.localBindMatrix = localBind;
-            part.localPosition = localPos;
+            part.localPosition = primCenter;
             part.localRotation = localRot;
             part.localScale = localScale;
             part.material = matProps;
@@ -907,7 +941,7 @@ bool ModelLoaderGLB::loadFromFile(
 
             for (const auto& vLocal : p.cpuGeometry.vertices) {
                 const Vec3 vModel = mat4TransformPoint(p.localBindMatrix, vLocal);
-                if (vec3Length(vec3Sub(vModel, pivot)) <= 0.45) {
+                if (vec3Length(vec3Sub(vModel, pivot)) <= 0.65) {
                     wheelGeom.addVertex(vModel);
                     if (isPureTire) {
                         tireGeom.addVertex(vModel);
@@ -1006,6 +1040,15 @@ bool ModelLoaderGLB::loadFromFile(
     std::printf("  Model Axle Bounds: Front Z=+%.3f m, Rear Z=%.3f m (Wheelbase=%.3f m)\n",
                 outModel.modelWheelCenters[0].z, outModel.modelWheelCenters[2].z,
                 outModel.modelWheelCenters[0].z - outModel.modelWheelCenters[2].z);
+
+    // Automated Vehicle Asset Validation Check
+    const auto validationReport = VehicleAssetValidator::validate(outModel);
+    if (!validationReport.passed) {
+        std::cerr << "[ModelLoaderGLB] Asset Validation Warning for " << outModel.modelName << ":\n"
+                  << validationReport.formattedReport << std::endl;
+    } else {
+        std::cout << "[ModelLoaderGLB] Asset Validation PASSED for " << outModel.modelName << std::endl;
+    }
 
     return true;
 }

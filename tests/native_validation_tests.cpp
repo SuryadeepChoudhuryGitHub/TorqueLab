@@ -5,9 +5,11 @@
  * validation scenarios in `tests/validation.test.ts` to verify 1:1 physical equivalence.
  */
 
+#include <glad/glad.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -20,6 +22,8 @@
 #include "physics/PhysicsWorld.h"
 #include "physics/SurfaceSystem.h"
 #include "physics/VehicleCollisionGenerator.h"
+#include "renderer/ModelLoaderGLB.h"
+#include "renderer/VehicleAssetValidator.h"
 #include "vehicle/Aerodynamics.h"
 #include "vehicle/BrakeSystem.h"
 #include "vehicle/Drivetrain.h"
@@ -1320,7 +1324,15 @@ void unitTest15_MultiVehiclePresetsAndMuscleCarTuning() {
     EXPECT_NEAR(world.vehicle->config.mass, 1680.0, 1e-4);
     EXPECT_TRUE(world.getDynamicsWorld()->getNumCollisionObjects() == initObjs);
 
-    // Switch Dodge Challenger -> Procedural Coupe
+    // Switch Dodge Challenger -> Hummer H2
+    const VehicleConfig hummer = createHummerConfig();
+    world.switchVehicle(hummer, nullptr);
+    for (int i = 0; i < 30; ++i) world.stepFixed();
+    EXPECT_TRUE(world.vehicle->config.id == "hummer");
+    EXPECT_NEAR(world.vehicle->config.mass, 2900.0, 1e-4);
+    EXPECT_TRUE(world.getDynamicsWorld()->getNumCollisionObjects() == initObjs);
+
+    // Switch Hummer H2 -> Procedural Coupe
     world.switchVehicle(proc, nullptr);
     for (int i = 0; i < 30; ++i) world.stepFixed();
     EXPECT_TRUE(world.vehicle->config.id == "procedural_coupe");
@@ -1893,6 +1905,124 @@ void unitTest28_WorldSpaceTireDeformationGroundPenetration() {
     EXPECT_LT(deformedRight.x, rightSidewallPt.x); // Expanded outward (-X)
 }
 
+void unitTest29_HummerOffRoadVehiclePhysicsAndCollisionDerivation() {
+    // 1. Verify Hummer H2 authentic configuration
+    const VehicleConfig hummer = createHummerConfig();
+    EXPECT_TRUE(hummer.id == "hummer");
+    EXPECT_NEAR(hummer.mass, 2900.0, 1e-4);
+    EXPECT_NEAR(hummer.wheelbase, 3.128, 0.02);
+    EXPECT_NEAR(hummer.trackWidth, 1.731, 0.02);
+    EXPECT_NEAR(hummer.wheelRadius, 0.430, 0.02); // 34-inch all-terrain tires
+    EXPECT_NEAR(hummer.tireRimRadius, 0.220, 0.02); // 17-inch rims
+    EXPECT_TRUE(hummer.drivetrainLayout == DrivetrainLayout::AWD);
+    EXPECT_NEAR(hummer.finalDriveRatio, 4.10, 1e-4); // 4.10:1 off-road axle ratio
+
+    // 2. Verify Vortec 6.2L V8 high-torque low-end curve
+    const double tLow = sampleEngineTorqueCurve(1000.0, hummer);
+    const double tPeak = sampleEngineTorqueCurve(4300.0, hummer);
+    const double tPower = sampleEngineTorqueCurve(5700.0, hummer);
+    EXPECT_GT(tLow, 400.0); // Strong crawler torque (> 400 N*m at 1000 RPM)
+    EXPECT_NEAR(tPeak, 565.0, 1e-4);
+    EXPECT_GT(tPower, 480.0);
+
+    // 3. Verify Hummer collision cache exists and derived geometry matches
+    std::string cachePath = "model/cache/Hummer_H2_collision.json";
+    if (!std::filesystem::exists(cachePath)) {
+        cachePath = "../model/cache/Hummer_H2_collision.json";
+    }
+    if (std::filesystem::exists(cachePath)) {
+        GeneratedVehicleCollision col{};
+        EXPECT_TRUE(VehicleCollisionGenerator::loadFromCache(col, cachePath));
+        EXPECT_TRUE(col.geometryDerivedSuccessfully);
+        EXPECT_NEAR(col.derivedWheelbase, 3.128, 0.02);
+        EXPECT_NEAR(col.derivedTrackWidth, 1.731, 0.02);
+        EXPECT_NEAR(col.derivedWheelRadius, 0.430, 0.02);
+        EXPECT_GT(static_cast<int>(col.pieces.size()), 0);
+    }
+
+    // 4. Verify Hummer static equilibrium and series pneumatic tyre compliance in PhysicsWorld
+    PhysicsWorld world(hummer, false, nullptr);
+    const Vec3 spawnPos{0.0, 0.76, 0.0};
+    world.vehicle->resetVehicle(&spawnPos);
+    for (int i = 0; i < 240; ++i) {
+        world.stepFixed();
+    }
+
+    const VehicleTelemetrySnapshot snap = world.vehicle->getTelemetrySnapshot();
+    double totalFz = 0.0;
+    for (const auto& w : snap.wheels) {
+        totalFz += w.normalLoad;
+        EXPECT_TRUE(w.inContact);
+        // Each wheel supports ~7 kN of normal load
+        EXPECT_GT(w.normalLoad, 5000.0);
+        // Pneumatic radial squash is positive and within expected range (10-45 mm)
+        EXPECT_GT(w.tireModel.getState().radialDeformation, 0.010);
+        EXPECT_LT(w.tireModel.getState().radialDeformation, 0.045);
+    }
+
+    const double expectedWeight = hummer.mass * GRAVITY;
+    const double errPct = (std::abs(totalFz - expectedWeight) / expectedWeight) * 100.0;
+    EXPECT_LT(errPct, 0.10); // Settled within 0.1% equilibrium
+
+    // 5. Verify AWD torque distribution under acceleration: all 4 wheels receive positive drive torque
+    world.vehicle->currentInputs = VehicleControlInputs{1.0, 0.0, 0.0, 0.0, false};
+    world.stepFixed();
+    const VehicleTelemetrySnapshot driveSnap = world.vehicle->getTelemetrySnapshot();
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_GT(driveSnap.wheels[static_cast<size_t>(i)].driveTorque, 50.0);
+    }
+}
+
+void unitTest30_VehicleAssetValidationAndUniversalModelImporter() {
+    // 1. Audit Hummer H2 3D asset integrity and complete bodywork preservation
+    LoadedVehicleModel hummerModel{};
+    const bool hummerLoaded = ModelLoaderGLB::loadFromFile("model/HUMMER.glb", hummerModel, "model/HUMMER_manifest.json", false);
+    EXPECT_TRUE(hummerLoaded);
+    EXPECT_TRUE(hummerModel.loadedSuccessfully);
+
+    // Verify main body ('Plane') is preserved: total vertices > 1,000,000 and total triangles > 1,500,000
+    EXPECT_GT(static_cast<int>(hummerModel.totalVertices), 1000000);
+    EXPECT_GT(static_cast<int>(hummerModel.totalTriangles), 1500000);
+    EXPECT_GT(static_cast<int>(hummerModel.chassisParts.size()), 40);
+
+    const VehicleAssetValidationReport hummerRep = VehicleAssetValidator::validate(hummerModel);
+    EXPECT_TRUE(hummerRep.passed);
+    // Strict zero-tolerance for body transparency leaks
+    EXPECT_EQ(static_cast<int>(hummerRep.bodyTransparencyLeaks), 0);
+    EXPECT_TRUE(hummerRep.allFourWheelsIdentified);
+    EXPECT_TRUE(hummerRep.wheelbasePlausible);
+    EXPECT_TRUE(hummerRep.trackWidthPlausible);
+    EXPECT_TRUE(hummerRep.wheelRadiusPlausible);
+    EXPECT_TRUE(hummerRep.boundsProportionsPlausible);
+    EXPECT_GT(static_cast<int>(hummerRep.doubleSidedPartCount), 0);
+
+    // 2. Audit BMW M4 Coupe 3D asset integrity
+    LoadedVehicleModel bmwModel{};
+    const bool bmwLoaded = ModelLoaderGLB::loadFromFile("model/BMW_M4.glb", bmwModel, "model/BMW_M4_manifest.json", false);
+    EXPECT_TRUE(bmwLoaded);
+    EXPECT_TRUE(bmwModel.loadedSuccessfully);
+
+    const VehicleAssetValidationReport bmwRep = VehicleAssetValidator::validate(bmwModel);
+    EXPECT_TRUE(bmwRep.passed);
+    EXPECT_EQ(static_cast<int>(bmwRep.bodyTransparencyLeaks), 0);
+    EXPECT_TRUE(bmwRep.allFourWheelsIdentified);
+    EXPECT_TRUE(bmwRep.wheelbasePlausible);
+    EXPECT_TRUE(bmwRep.trackWidthPlausible);
+
+    // 3. Audit 1970 Dodge Challenger R/T 3D asset integrity
+    LoadedVehicleModel dodgeModel{};
+    const bool dodgeLoaded = ModelLoaderGLB::loadFromFile("model/Dodge_Challenger.glb", dodgeModel, "model/Dodge_Challenger_manifest.json", false);
+    EXPECT_TRUE(dodgeLoaded);
+    EXPECT_TRUE(dodgeModel.loadedSuccessfully);
+
+    const VehicleAssetValidationReport dodgeRep = VehicleAssetValidator::validate(dodgeModel);
+    EXPECT_TRUE(dodgeRep.passed);
+    EXPECT_EQ(static_cast<int>(dodgeRep.bodyTransparencyLeaks), 0);
+    EXPECT_TRUE(dodgeRep.allFourWheelsIdentified);
+    EXPECT_TRUE(dodgeRep.wheelbasePlausible);
+    EXPECT_TRUE(dodgeRep.trackWidthPlausible);
+}
+
 } // namespace
 
 int main() {
@@ -1934,6 +2064,8 @@ int main() {
         {"Unit 26: Tyre Thermodynamics, Frictional Heating, Wear & Puncture", unitTest26_ThermodynamicsWearAndPuncture},
         {"Unit 27: Strict Rigid Rim Protection & Vertex Shader Boundary", unitTest27_RigidRimProtectionBoundary},
         {"Unit 28: World-Space Tyre Ground Penetration Elimination & Flush Contact Patch", unitTest28_WorldSpaceTireDeformationGroundPenetration},
+        {"Unit 29: Hummer H2 Off-Road Physics, AWD Drivetrain & Collision Geometry", unitTest29_HummerOffRoadVehiclePhysicsAndCollisionDerivation},
+        {"Unit 30: Automated Vehicle Asset Validation & Universal Model Importer", unitTest30_VehicleAssetValidationAndUniversalModelImporter},
         {"Test A: Static Equilibrium on Flat Ground", validationTestA_StaticEquilibrium},
         {"Test B: Acceleration & Longitudinal Load Transfer (Rear Squat)", validationTestB_AccelerationAndSquat},
         {"Test C: Service Braking, Front Dive & Progressive Deceleration", validationTestC_BrakingAndDive},

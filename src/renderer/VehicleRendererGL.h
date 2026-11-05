@@ -33,7 +33,7 @@ public:
     void init(const VehicleConfig& config);
     void syncWithVehicle(const VehicleDynamics& vehicle, double alpha);
     void renderShadowPass(Shader& depthShader) const;
-    void renderMainPass(Shader& mainShader) const;
+    void renderMainPass(Shader& mainShader, const Vec3& cameraPos = Vec3{0, 0, 0}) const;
     void renderVisualDebug(Shader& lineShader, Shader& mainShader, const Mat4& viewProj) const;
 
     // Model mode & switching

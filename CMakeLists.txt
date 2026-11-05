@@ -126,6 +126,7 @@ add_library(TorqueLabPhysics STATIC
     src/renderer/Mesh.cpp
     src/renderer/Texture2D.cpp
     src/renderer/ModelLoaderGLB.cpp
+    src/renderer/VehicleAssetValidator.cpp
     src/vehicle/VehicleConfig.cpp
     src/vehicle/SuspensionSystem.cpp
     src/vehicle/TireModel.cpp

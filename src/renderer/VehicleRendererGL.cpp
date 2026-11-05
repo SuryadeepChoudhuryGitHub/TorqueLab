@@ -435,12 +435,12 @@ void VehicleRendererGL::renderShadowPass(Shader& depthShader) const {
     }
 }
 
-void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
+void VehicleRendererGL::renderMainPass(Shader& mainShader, const Vec3& cameraPos) const {
     mainShader.setInt("uTireDeformEnabled", 0);
 
     if (m_useImportedModel && m_activeModel && m_activeModel->loadedSuccessfully) {
         // ---------------------------------------------------------------------
-        // IMPORTED BLENDER VEHICLE MODEL (BMW M4 Coupe / Dodge Challenger)
+        // IMPORTED BLENDER VEHICLE MODEL (BMW M4 Coupe / Dodge Challenger / Hummer H2)
         // ---------------------------------------------------------------------
 
         // 1. Opaque Chassis Parts (Body, hood, trunk, fenders, interior, spoilers)
@@ -458,7 +458,14 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
 
             mainShader.applyMaterial(mat);
             mainShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));
-            part.mesh.draw();
+
+            if (part.material.doubleSided) {
+                glDisable(GL_CULL_FACE);
+                part.mesh.draw();
+                glEnable(GL_CULL_FACE);
+            } else {
+                part.mesh.draw();
+            }
         }
 
         // 2. Four Independent Wheels (Rims, Tires, Center Caps with realistic PBR materials)
@@ -470,7 +477,14 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
                 applyTireDeformUniforms(mainShader, m_wheelDeformStates[static_cast<size_t>(i)], parts[k].isTire);
                 mainShader.applyMaterial(parts[k].material);
                 mainShader.setMat4("uModel", mats[k]);
-                parts[k].mesh.draw();
+
+                if (parts[k].material.doubleSided) {
+                    glDisable(GL_CULL_FACE);
+                    parts[k].mesh.draw();
+                    glEnable(GL_CULL_FACE);
+                } else {
+                    parts[k].mesh.draw();
+                }
             }
 
             mainShader.setInt("uTireDeformEnabled", 0);
@@ -481,16 +495,47 @@ void VehicleRendererGL::renderMainPass(Shader& mainShader) const {
             m_strutMesh.draw();
         }
 
-        // 3. Transparent Cabin Glass & Light Lenses (rendered with depth test + alpha blending)
+        // 3. Transparent Cabin Glass & Light Lenses (Depth-sorted back-to-front + alpha blending)
+        struct TransparentPartEntry {
+            size_t partIndex;
+            float camDistSq;
+        };
+        std::vector<TransparentPartEntry> transEntries;
+        transEntries.reserve(m_activeModel->chassisParts.size());
+
+        for (size_t i = 0; i < m_activeModel->chassisParts.size(); ++i) {
+            const auto& part = m_activeModel->chassisParts[i];
+            if (!part.isTransparent) continue;
+
+            const Mat4 worldM = Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix);
+            const Vec3 partWorldPos = mat4TransformPoint(worldM, part.localPosition);
+            const float distSq = static_cast<float>(vec3LengthSq(vec3Sub(partWorldPos, cameraPos)));
+            transEntries.push_back({i, distSq});
+        }
+
+        // Sort descending: furthest from camera rendered first (painter's algorithm)
+        std::sort(transEntries.begin(), transEntries.end(), [](const TransparentPartEntry& a, const TransparentPartEntry& b) {
+            return a.camDistSq > b.camDistSq;
+        });
+
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
-        for (const auto& part : m_activeModel->chassisParts) {
-            if (!part.isTransparent) continue;
+
+        for (const auto& entry : transEntries) {
+            const auto& part = m_activeModel->chassisParts[entry.partIndex];
             mainShader.applyMaterial(part.material);
             mainShader.setMat4("uModel", Mat4::multiply(m_importedChassisWorldMatrix, part.localBindMatrix));
-            part.mesh.draw();
+
+            if (part.material.doubleSided) {
+                glDisable(GL_CULL_FACE);
+                part.mesh.draw();
+                glEnable(GL_CULL_FACE);
+            } else {
+                part.mesh.draw();
+            }
         }
+
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
 

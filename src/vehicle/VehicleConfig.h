@@ -178,6 +178,7 @@ struct VehicleConfig {
 VehicleConfig createProceduralCoupeConfig();
 VehicleConfig createBmwM4Config();
 VehicleConfig createDodgeChallengerConfig();
+VehicleConfig createHummerConfig();
 
 inline VehicleConfig createDefaultVehicleConfig() {
     return createProceduralCoupeConfig();

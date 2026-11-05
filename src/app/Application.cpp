@@ -343,6 +343,8 @@ void Application::switchActiveVehicle(const std::string& vehicleId) {
         cfg = createBmwM4Config();
     } else if (vehicleId == "dodge_challenger") {
         cfg = createDodgeChallengerConfig();
+    } else if (vehicleId == "hummer") {
+        cfg = createHummerConfig();
     } else if (vehicleId == "procedural_coupe") {
         cfg = createProceduralCoupeConfig();
         colPtr = nullptr;
@@ -635,7 +637,7 @@ void Application::renderFrame(double /*alpha*/) {
     m_mainShader.setInt("uDiagnosticMode", m_diagnosticMode);
 
     m_trackRenderer.renderMainPass(m_mainShader);
-    m_vehicleRenderer.renderMainPass(m_mainShader);
+    m_vehicleRenderer.renderMainPass(m_mainShader, m_cameraController->getPosition());
     m_debugOverlay.render(*m_physicsWorld->vehicle, m_lineShader, m_mainShader, viewProj);
     m_vehicleRenderer.renderVisualDebug(m_lineShader, m_mainShader, viewProj);
 

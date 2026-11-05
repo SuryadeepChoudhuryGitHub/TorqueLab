@@ -1,0 +1,58 @@
+{
+  "model_name": "Hummer H2",
+  "source": "Blender glTF 2.0 Export",
+  "scale": 0.370,
+  "rotation_y_deg": 5.1382,
+  "axis_convention": {
+    "forward": "+Z",
+    "up": "+Y",
+    "left": "+X"
+  },
+  "ignore_nodes": [
+    "Ground",
+    "Camera",
+    "Light"
+  ],
+  "roles": {
+    "Cylinder.009": "Wheel_FL",
+    "Cylinder.010": "Wheel_FL",
+    "Cylinder.008": "Wheel_FL",
+    "Cube.017": "Wheel_FL",
+    "Plane.025": "BrakeCaliper_FL",
+    "Cylinder.012": "Wheel_FR",
+    "Cylinder.020": "Wheel_FR",
+    "Cylinder.013": "Wheel_FR",
+    "Cube.018": "Wheel_FR",
+    "Cube.023": "Wheel_FR",
+    "Plane.026": "BrakeCaliper_FR",
+    "Cylinder.018": "Wheel_RL",
+    "Cylinder.016": "Wheel_RL",
+    "Cylinder.019": "Wheel_RL",
+    "Cube.021": "Wheel_RL",
+    "Plane.028": "BrakeCaliper_RL",
+    "Cylinder.015": "Wheel_RR",
+    "Cylinder.011": "Wheel_RR",
+    "Cylinder.014": "Wheel_RR",
+    "Cube.019": "Wheel_RR",
+    "Cube.022": "Wheel_RR",
+    "Plane.027": "BrakeCaliper_RR"
+  },
+  "material_overrides": {
+    "DarkBlueMetallicPaint": { "roughness": 0.22, "metalness": 0.55, "base_color_hex": "#102a45" },
+    "DarkGrayMetallicPaint": { "roughness": 0.35, "metalness": 0.40, "base_color_hex": "#2d333b" },
+    "Tire Rubber": { "roughness": 0.82, "metalness": 0.0, "base_color_hex": "#1c1f24" },
+    "Metal1": { "roughness": 0.08, "metalness": 0.95, "base_color_hex": "#f1f5f9" },
+    "Metal2": { "roughness": 0.25, "metalness": 0.85, "base_color_hex": "#94a3b8" },
+    "AnodizedMetal": { "roughness": 0.28, "metalness": 0.80, "base_color_hex": "#1e242c" },
+    "DarkMetal": { "roughness": 0.50, "metalness": 0.70, "base_color_hex": "#181a1f" },
+    "Brake caliper": { "roughness": 0.30, "metalness": 0.40, "base_color_hex": "#b91c1c" },
+    "whiteGlass": { "roughness": 0.05, "metalness": 0.10, "opacity": 0.40, "transparent": true, "base_color_hex": "#f8fafc", "emissive_color_hex": "#fef08a", "emissive_intensity": 1.5 },
+    "orangeGLASS": { "roughness": 0.15, "metalness": 0.10, "opacity": 0.50, "transparent": true, "base_color_hex": "#ea580c", "emissive_color_hex": "#f97316", "emissive_intensity": 1.2 },
+    "redGLASS": { "roughness": 0.20, "metalness": 0.10, "is_brake_light": true, "base_color_hex": "#780808", "emissive_color_hex": "#ff1e1e" },
+    "glass": { "roughness": 0.05, "metalness": 0.15, "opacity": 0.30, "transparent": true, "base_color_hex": "#0f172a" },
+    "MIRROR": { "roughness": 0.02, "metalness": 0.99, "base_color_hex": "#ffffff" },
+    "Material.002": { "roughness": 0.60, "metalness": 0.10, "base_color_hex": "#1b1e23" },
+    "Material.003": { "roughness": 0.20, "metalness": 0.85, "base_color_hex": "#cbd5e1" },
+    "DefaultTrim": { "roughness": 0.50, "metalness": 0.15, "base_color_hex": "#282c34" }
+  }
+}
