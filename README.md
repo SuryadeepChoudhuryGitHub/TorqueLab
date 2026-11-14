@@ -3,7 +3,7 @@
 
 **Where physical laws govern every motion.**
 
-**Torque Lab Native** is a high-performance Windows desktop 6-DOF vehicle dynamics simulator and interactive engineering laboratory built with **C++20**, **OpenGL 3.3 Core Profile**, **GLSL 330**, **GLFW 3.4**, **GLAD**, **Bullet Physics (`btDiscreteDynamicsWorld`)**, **Dear ImGui**, and **CMake**.
+**Torque Lab Native** is a high-performance Windows desktop 6-DOF vehicle dynamics simulator and interactive engineering laboratory built with **C++20**, **OpenGL 3.3 Core Profile**, **GLSL 330**, **GLFW 3.4**, **GLAD**, **Bullet Physics (`btDiscreteDynamicsWorld`)**, **Dear ImGui**, and **CMake**. 
 
 Every vehicle behavior — acceleration, braking, cornering, pitch (brake dive and acceleration squat), body roll, load transfer, tire wheelspin, brake lockup, understeer/oversteer, surface grip transitions, airborne ballistics, obstacle collisions, and controller force feedback — emerges strictly from coherent physical laws (forces, torques, mass, rotational inertia, suspension spring-dampers, and slip-based friction circles).
 
